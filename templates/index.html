@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Barbershop Chord Analyzer</title>
+    <script src="https://cdn.jsdelivr.net/npm/vexflow@4.2.2/build/cjs/vexflow.js"></script>
+    <style>
+        body { font-family: system-ui, sans-serif; background: #f0f2f5; display: flex; flex-direction: column; align-items: center; padding: 20px; }
+        .card { background: white; padding: 30px; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.08); width: 800px; }
+        #notation-container { background: #fff; border: 1px solid #e1e4e8; margin-bottom: 20px; border-radius: 8px; }
+        .controls { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 25px; }
+        .part-ctrl { background: #f8f9fa; padding: 15px; border-radius: 10px; text-align: center; border: 2px solid #eee; cursor: pointer; transition: all 0.1s; }
+        .part-ctrl.active { border-color: #007bff; background: #e7f3ff; }
+        
+        /* Removal of visual focus indicators on input as requested */
+        input.note-input { width: 85px; font-size: 1.2rem; text-align: center; padding: 6px; border: 1px solid #ccc; border-radius: 6px; margin-bottom: 10px; font-weight: bold; outline: none; }
+        input.note-input:focus { border: 1px solid #ccc; } 
+
+        .btn-group { display: flex; justify-content: center; gap: 4px; }
+        button { cursor: pointer; border: 1px solid #ccc; background: white; padding: 5px 10px; border-radius: 4px; font-weight: bold; }
+        #analysis-result { border-top: 2px solid #f0f0f0; padding-top: 20px; display: flex; justify-content: space-between; align-items: center; min-height: 80px; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h1 style="margin-top:0; font-size: 1.1rem; color: #666;">Barbershop Chord Analyzer</h1>
+    <div id="notation-container"><div id="notation"></div></div>
+    <div class="controls"></div>
+    <div id="analysis-result">
+        <div><h2 id="chordName" style="margin:0">Analyzing...</h2><p id="meta" style="color: #007bff; font-weight: 600; margin: 5px 0;"></p></div>
+        <div id="roles" style="text-align: right; color: #444; line-height: 1.5;"></div>
+    </div>
+</div>
+
+<script>
+const { Renderer, Stave, StaveNote, Voice, Formatter, Accidental, StaveConnector } = Vex.Flow;
+
+const STEP_TO_SEMI = { 'c': 0, 'd': 2, 'e': 4, 'f': 5, 'g': 7, 'a': 9, 'b': 11 };
+const SEMI_TO_STEP_ACC = [
+    {s:'c', a:0}, {s:'c', a:1}, {s:'d', a:0}, {s:'e', a:-1}, {s:'e', a:0}, 
+    {s:'f', a:0}, {s:'f', a:1}, {s:'g', a:0}, {s:'a', a:-1}, {s:'a', a:0}, 
+    {s:'b', a:-1}, {s:'b', a:0}
+];
+const ACC_TO_STR = { "-2": "bb", "-1": "b", "0": "", "1": "#", "2": "x" };
+const STR_TO_ACC = { "bb": -2, "b": -1, "": 0, "#": 1, "x": 2 };
+
+let chordState = [
+    { part: 'Bass', step: 'g', acc: 0, oct: 3 },
+    { part: 'Bari', step: 'b', acc: 0, oct: 3 },
+    { part: 'Lead', step: 'd', acc: 0, oct: 4 },
+    { part: 'Tenor', step: 'f', acc: 0, oct: 4 }
+];
+let selectedIdx = 2;
+
+function getAbsSemitone(noteObj) {
+    return (noteObj.oct * 12) + STEP_TO_SEMI[noteObj.step] + noteObj.acc;
+}
+
+function getNoteString(obj) {
+    return obj.step + ACC_TO_STR[obj.acc] + obj.oct;
+}
+
+function updateNote(idx, semiChange) {
+    let targetSemi = getAbsSemitone(chordState[idx]) + semiChange;
+    let newOct = Math.floor(targetSemi / 12);
+    let rem = ((targetSemi % 12) + 12) % 12;
+    let mapping = SEMI_TO_STEP_ACC[rem];
+    chordState[idx] = { ...chordState[idx], step: mapping.s, acc: mapping.a, oct: newOct };
+    renderAll();
+}
+
+function cycleEnharmonic(idx) {
+    const targetSemi = getAbsSemitone(chordState[idx]);
+    const steps = ['c', 'd', 'e', 'f', 'g', 'a', 'b'];
+    let variations = [];
+    steps.forEach(s => {
+        for (let o = chordState[idx].oct - 1; o <= chordState[idx].oct + 1; o++) {
+            let acc = targetSemi - (o * 12 + STEP_TO_SEMI[s]);
+            if (Math.abs(acc) <= 2) variations.push({ step: s, acc, oct: o });
+        }
+    });
+    let curIdx = variations.findIndex(v => v.step === chordState[idx].step && v.acc === chordState[idx].acc && v.oct === chordState[idx].oct);
+    chordState[idx] = { ...chordState[idx], ...variations[(curIdx + 1) % variations.length] };
+    renderAll();
+}
+
+function manualUpdate(idx, val) {
+    const match = val.match(/^([a-gA-G])(bb|b|#|x)?([0-8])$/i);
+    if (match) {
+        chordState[idx] = {
+            ...chordState[idx],
+            step: match[1].toLowerCase(),
+            acc: STR_TO_ACC[match[2] ? match[2].toLowerCase() : ""],
+            oct: parseInt(match[3])
+        };
+        renderAll();
+    }
+}
+
+function renderControls() {
+    const container = document.querySelector('.controls');
+    container.innerHTML = '';
+    chordState.forEach((p, i) => {
+        const div = document.createElement('div');
+        div.className = `part-ctrl ${i === selectedIdx ? 'active' : ''}`;
+        div.onclick = () => { selectedIdx = i; renderControls(); };
+        const display = p.step.toUpperCase() + ACC_TO_STR[p.acc] + p.oct;
+        div.innerHTML = `
+            <div style="font-weight:600; font-size: 0.7rem; margin-bottom:5px; color:#666">${p.part}</div>
+            <input type="text" class="note-input" value="${display}" onchange="manualUpdate(${i}, this.value)" onclick="event.stopPropagation()">
+            <div class="btn-group">
+                <button onclick="event.stopPropagation();updateNote(${i},-1)">↓</button>
+                <button onclick="event.stopPropagation();updateNote(${i},1)">↑</button>
+                <button onclick="event.stopPropagation();cycleEnharmonic(${i})">↻</button>
+            </div>`;
+        container.appendChild(div);
+    });
+}
+
+function renderNotation() {
+    const div = document.getElementById("notation");
+    div.innerHTML = "";
+    const renderer = new Renderer(div, Renderer.Backends.SVG);
+    renderer.resize(740, 320);
+    const context = renderer.getContext();
+    const topStave = new Stave(100, 50, 500).addClef("treble", "default", "8vb").setContext(context).draw();
+    const botStave = new Stave(100, 180, 500).addClef("bass").setContext(context).draw();
+    new StaveConnector(topStave, botStave).setType(StaveConnector.type.BRACE).setContext(context).draw();
+
+    const makeNote = (noteObj, stem, clef) => {
+        let writtenOct = (clef === 'treble') ? noteObj.oct + 1 : noteObj.oct;
+        const vn = new StaveNote({ keys: [`${noteObj.step}/${writtenOct}`], duration: "q", stem_direction: stem, clef: clef });
+        if (noteObj.acc !== 0) vn.addModifier(new Accidental(ACC_TO_STR[noteObj.acc].replace('x', '##')));
+        return vn;
+    };
+
+    const vTenor = new Voice({num_beats: 1, beat_value: 4}).setStrict(false).addTickables([makeNote(chordState[3], 1, 'treble')]);
+    const vLead = new Voice({num_beats: 1, beat_value: 4}).setStrict(false).addTickables([makeNote(chordState[2], -1, 'treble')]);
+    const vBari = new Voice({num_beats: 1, beat_value: 4}).setStrict(false).addTickables([makeNote(chordState[1], 1, 'bass')]);
+    const vBass = new Voice({num_beats: 1, beat_value: 4}).setStrict(false).addTickables([makeNote(chordState[0], -1, 'bass')]);
+
+    new Formatter().joinVoices([vTenor, vLead]).format([vTenor, vLead], 400);
+    new Formatter().joinVoices([vBari, vBass]).format([vBari, vBass], 400);
+    vTenor.draw(context, topStave); vLead.draw(context, topStave);
+    vBari.draw(context, botStave); vBass.draw(context, botStave);
+}
+
+async function fetchAnalysis() {
+    try {
+        const notes = chordState.map(s => getNoteString(s));
+        const res = await fetch('/analyze', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ notes })
+        });
+        const data = await res.json();
+        document.getElementById('chordName').innerText = data.common_name;
+        document.getElementById('meta').innerText = `${data.inversion.toUpperCase()} — ${data.voicing.toUpperCase()}`;
+        document.getElementById('roles').innerHTML = data.notes.map(n => `<div>${n.part}: <strong>${n.role}</strong></div>`).join('');
+    } catch (e) { document.getElementById('chordName').innerText = "Unknown Chord"; }
+}
+
+function renderAll() { renderControls(); renderNotation(); fetchAnalysis(); }
+
+window.addEventListener('keydown', (e) => {
+    const isTyping = document.activeElement.tagName === 'INPUT';
+    
+    if (isTyping) {
+        if (e.key === 'Enter') document.activeElement.blur();
+        if (e.key !== 'Tab') return;
+    }
+
+    // "Quick Entry" mode: trigger typing on A-G press when not already typing
+    if (!isTyping && e.key.match(/^[a-g]$/i)) {
+        const activeInput = document.querySelectorAll('.part-ctrl')[selectedIdx].querySelector('input');
+        activeInput.value = ""; // Clear for new entry
+        activeInput.focus();
+        return; // Let the browser handle the current character entry into the focused input
+    }
+
+    if (e.key === 'ArrowUp') { e.preventDefault(); updateNote(selectedIdx, 1); }
+    if (e.key === 'ArrowDown') { e.preventDefault(); updateNote(selectedIdx, -1); }
+    if (e.key === 'Enter') { e.preventDefault(); cycleEnharmonic(selectedIdx); }
+    if (e.key === 'Tab') {
+        e.preventDefault();
+        selectedIdx = e.shiftKey ? (selectedIdx + 3) % 4 : (selectedIdx + 1) % 4;
+        renderControls();
+    }
+});
+
+renderAll();
+</script>
+</body>
+</html>
