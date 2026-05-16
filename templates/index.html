@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Barbershop Chord Analyzer</title>
+    <title>Barbershop Chord Calculator</title>
     <script src="https://cdn.jsdelivr.net/npm/vexflow@4.2.2/build/cjs/vexflow.js"></script>
     <style>
         body { font-family: system-ui, sans-serif; background: #f0f2f5; display: flex; flex-direction: column; align-items: center; padding: 20px; }
@@ -10,24 +10,28 @@
         .controls { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 25px; }
         .part-ctrl { background: #f8f9fa; padding: 15px; border-radius: 10px; text-align: center; border: 2px solid #eee; cursor: pointer; transition: all 0.1s; }
         .part-ctrl.active { border-color: #007bff; background: #e7f3ff; }
-        
-        /* Removal of visual focus indicators on input as requested */
         input.note-input { width: 85px; font-size: 1.2rem; text-align: center; padding: 6px; border: 1px solid #ccc; border-radius: 6px; margin-bottom: 10px; font-weight: bold; outline: none; }
         input.note-input:focus { border: 1px solid #ccc; } 
-
         .btn-group { display: flex; justify-content: center; gap: 4px; }
         button { cursor: pointer; border: 1px solid #ccc; background: white; padding: 5px 10px; border-radius: 4px; font-weight: bold; }
-        #analysis-result { border-top: 2px solid #f0f0f0; padding-top: 20px; display: flex; justify-content: space-between; align-items: center; min-height: 80px; }
+        
+        #analysis-result { border-top: 2px solid #f0f0f0; padding-top: 20px; display: flex; justify-content: space-between; align-items: center; min-height: 80px; transition: opacity 0.2s; }
+        #analysis-result.pending { opacity: 0.4; }
+        .pending-text { font-size: 0.8rem; font-weight: normal; color: #999; margin-left: 10px; }
     </style>
 </head>
 <body>
 
 <div class="card">
-    <h1 style="margin-top:0; font-size: 1.1rem; color: #666;">Barbershop Chord Analyzer</h1>
+    <h1 style="margin-top:0; font-size: 1.1rem; color: #666;">Barbershop Chord Calculator</h1>
     <div id="notation-container"><div id="notation"></div></div>
     <div class="controls"></div>
     <div id="analysis-result">
-        <div><h2 id="chordName" style="margin:0">Analyzing...</h2><p id="meta" style="color: #007bff; font-weight: 600; margin: 5px 0;"></p></div>
+        <div>
+            <h2 id="chordName" style="margin:0; display: inline-block;">Analyzing...</h2>
+            <span id="pendingIndicator" class="pending-text" style="display:none;">(calculating...)</span>
+            <p id="meta" style="color: #007bff; font-weight: 600; margin: 5px 0;"></p>
+        </div>
         <div id="roles" style="text-align: right; color: #444; line-height: 1.5;"></div>
     </div>
 </div>
@@ -51,6 +55,7 @@ let chordState = [
     { part: 'Tenor', step: 'f', acc: 0, oct: 4 }
 ];
 let selectedIdx = 2;
+let analysisId = 0;
 
 function getAbsSemitone(noteObj) {
     return (noteObj.oct * 12) + STEP_TO_SEMI[noteObj.step] + noteObj.acc;
@@ -146,6 +151,12 @@ function renderNotation() {
 }
 
 async function fetchAnalysis() {
+    const currentId = ++analysisId;
+    document.getElementById('analysis-result').classList.add('pending');
+    document.getElementById('pendingIndicator').style.display = 'inline';
+    document.getElementById('roles').innerHTML = '';
+    document.getElementById('meta').innerText = '';
+
     try {
         const notes = chordState.map(s => getNoteString(s));
         const res = await fetch('/analyze', {
@@ -153,31 +164,36 @@ async function fetchAnalysis() {
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ notes })
         });
+        
+        if (!res.ok) throw new Error();
         const data = await res.json();
-        document.getElementById('chordName').innerText = data.common_name;
-        document.getElementById('meta').innerText = `${data.inversion.toUpperCase()} — ${data.voicing.toUpperCase()}`;
-        document.getElementById('roles').innerHTML = data.notes.map(n => `<div>${n.part}: <strong>${n.role}</strong></div>`).join('');
-    } catch (e) { document.getElementById('chordName').innerText = "Unknown Chord"; }
+
+        if (currentId === analysisId) {
+            document.getElementById('chordName').innerText = data.common_name;
+            document.getElementById('meta').innerText = `${data.inversion.toUpperCase()} — ${data.voicing.toUpperCase()}`;
+            document.getElementById('roles').innerHTML = data.notes.map(n => `<div>${n.part}: <strong>${n.role}</strong></div>`).join('');
+            document.getElementById('analysis-result').classList.remove('pending');
+            document.getElementById('pendingIndicator').style.display = 'none';
+        }
+    } catch (e) {
+        if (currentId === analysisId) {
+            document.getElementById('chordName').innerText = "Waking up server...";
+        }
+    }
 }
 
 function renderAll() { renderControls(); renderNotation(); fetchAnalysis(); }
 
 window.addEventListener('keydown', (e) => {
     const isTyping = document.activeElement.tagName === 'INPUT';
-    
     if (isTyping) {
         if (e.key === 'Enter') document.activeElement.blur();
         if (e.key !== 'Tab') return;
     }
-
-    // "Quick Entry" mode: trigger typing on A-G press when not already typing
     if (!isTyping && e.key.match(/^[a-g]$/i)) {
         const activeInput = document.querySelectorAll('.part-ctrl')[selectedIdx].querySelector('input');
-        activeInput.value = ""; // Clear for new entry
-        activeInput.focus();
-        return; // Let the browser handle the current character entry into the focused input
+        activeInput.value = ""; activeInput.focus(); return;
     }
-
     if (e.key === 'ArrowUp') { e.preventDefault(); updateNote(selectedIdx, 1); }
     if (e.key === 'ArrowDown') { e.preventDefault(); updateNote(selectedIdx, -1); }
     if (e.key === 'Enter') { e.preventDefault(); cycleEnharmonic(selectedIdx); }
@@ -186,6 +202,8 @@ window.addEventListener('keydown', (e) => {
         selectedIdx = e.shiftKey ? (selectedIdx + 3) % 4 : (selectedIdx + 1) % 4;
         renderControls();
     }
+    if (e.key === 'ArrowLeft') { e.preventDefault(); selectedIdx = (selectedIdx + 3) % 4; renderControls(); }
+    if (e.key === 'ArrowRight') { e.preventDefault(); selectedIdx = (selectedIdx + 1) % 4; renderControls(); }
 });
 
 renderAll();
