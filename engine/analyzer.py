@@ -5,7 +5,10 @@ from music21 import chord, interval
 class ChordAnalyzer:
     def __init__(self, notes):
         sanitized = [n.replace("x", "##") for n in notes]
-        self.chord_obj = chord.Chord(sanitized)
+        try:
+            self.chord_obj = chord.Chord(sanitized)
+        except Exception as e:
+            self.chord_obj = None
         self.parts = ["Bass", "Bari", "Lead", "Tenor"]
 
     def _get_barbershop_name(self):
@@ -67,6 +70,13 @@ class ChordAnalyzer:
 
     def analyze(self):
         c = self.chord_obj
+        if not c or not c.pitches:
+            return {
+                "common_name": "Unknown Chord",
+                "inversion": "N/A",
+                "voicing": "N/A",
+                "notes": [],
+            }
         inv_names = {
             0: "Root Position",
             1: "1st Inversion",
