@@ -1,0 +1,96 @@
+--- ./templates/js-tests.html ---
+<!DOCTYPE html>
+<html>
+<head>
+    <title>JS Unit Tests</title>
+    <style>
+        body { font-family: monospace; padding: 20px; line-height: 1.5; }
+        .pass { color: green; }
+        .fail { color: red; font-weight: bold; }
+        h1 { border-bottom: 2px solid #eee; }
+        .summary { margin-top: 20px; font-weight: bold; border-top: 2px solid #ccc; padding-top: 10px; }
+    </style>
+</head>
+<body>
+    <h1>Browser Unit Tests - Serial #027</h1>
+    <div id="results">Running tests...</div>
+    <div id="summary" class="summary"></div>
+
+    <script type="module">
+        import { getAbsSemitone, getVariations } from '/static/js/spelling.js';
+
+        const results = document.getElementById('results');
+        const summary = document.getElementById('summary');
+        let passCount = 0;
+        let failCount = 0;
+
+        function assert(condition, message) {
+            const div = document.createElement('div');
+            if (condition) {
+                div.className = 'pass';
+                div.innerText = '✓ ' + message;
+                passCount++;
+            } else {
+                div.className = 'fail';
+                div.innerText = '✕ ' + message;
+                failCount++;
+            }
+            results.appendChild(div);
+        }
+
+        results.innerHTML = '';
+
+        // --- 1. Basic Semitone Calculations ---
+        assert(getAbsSemitone({step: 'c', acc: 0, oct: 4}) === 48, "C4 should be 48");
+        
+        // --- 2. Accidental Preference (No Context) ---
+        // For pitch 49, Db (-1) is preferred over C# (1)
+        const pref49 = getVariations(49, 4, []);
+        assert(pref49[0].step === 'd' && pref49[0].acc === -1, "Vacuum: Prefer Db4 over C#4");
+
+        // --- 3. False Relation Avoidance ---
+        // Context: Lead is on D4 (Pitch 50, Step 'd')
+        // Target: Tenor moves to 49 (Db or C#). 
+        // Db clashes with Lead's D. C# does not.
+        const contextFalse = [{step: 'd', semi: 50}];
+        const variationsFalse = getVariations(49, 4, contextFalse);
+        assert(variationsFalse[0].step === 'c' && variationsFalse[0].acc === 1, "False Relation: Pick C#4 when D4 is present to avoid clash");
+
+        // --- 4. Unison Check (Not a False Relation) ---
+        // Context: Lead is on D4 (Pitch 50, Step 'd')
+        // Target: Tenor moves to 50.
+        const contextUnison = [{step: 'd', semi: 50}];
+        const variationsUnison = getVariations(50, 4, contextUnison);
+        assert(variationsUnison[0].step === 'd' && variationsUnison[0].acc === 0, "Unison: Pick D4 when another D4 is present (not a false relation)");
+
+        // --- 5. Global Preference Order Check ---
+        // Natural > Flat
+        const pref47 = getVariations(47, 3, []);
+        assert(pref47[0].step === 'b' && pref47[0].acc === 0, "Preference: Natural B3 preferred over Cb4");
+
+        // --- 6. Tie-break: All candidates are False Relations ---
+        // Target 49 (Possible spellings: Db, C#, Bx)
+        // Context: D natural (50), C natural (48), and B natural (47) are all present.
+        // Db clashes with D.
+        // C# clashes with C.
+        // Bx clashes with B.
+        // Since ALL are false relations, accidental preference (Flat > Sharp > DoubleSharp) wins.
+        const contextAllFalse = [
+            {step: 'd', semi: 50}, 
+            {step: 'c', semi: 48}, 
+            {step: 'b', semi: 47}
+        ];
+        const variationsAll = getVariations(49, 4, contextAllFalse);
+        assert(variationsAll[0].step === 'd' && variationsAll[0].acc === -1, "Tie-break: All are false relations? Pick Flat Db over Sharp C#");
+
+        // --- Final Summary ---
+        summary.innerText = `Tests: ${passCount + failCount} | Passed: ${passCount} | Failed: ${failCount}`;
+        if (failCount === 0) {
+            summary.style.color = "green";
+            summary.innerText += " - ALL TESTS PASSED";
+        } else {
+            summary.style.color = "red";
+        }
+    </script>
+</body>
+</html>
