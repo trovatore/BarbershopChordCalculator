@@ -10,7 +10,25 @@ If you want to use it for SSAA or SATB, you could just pretend it's TTBB; the an
 
 ![screenshot](images/image.png)
 
+## License
+This application and its source code are released under the [MIT License](LICENSE).  There is no warranty of any kind, express or implied.
+
+## Using the App
+  * Select a Part: Click on a voice box (Bass, Bari, Lead, or Tenor) or use Tab (and Shift-Tab) to cycle through them.  The Right Arrow and Left Arrow will also cycle through the different voices.
+
+  * Typing Notes: When a part is selected, simply type the letter (A-G) to change the note, possibly followed by an accidental (#, b, x, or bb), and then an octave number.
+
+### Note Notation
+  * Accidentals: Use b for flat, # for sharp, bb for double-flat, and x for double-sharp.
+  * Octaves: Follow the letter with an octave number (e.g., G3, Bb3, Cx4).
+  * Enharmonics: Click the Circular Arrow (↻) or press Enter to cycle through enharmonic spellings (e.g., changing a G# to an Ab).
+
+### Controls
+  * Arrow Keys (Up/Down): Move the selected note up or down by a semitone.
+  * On-Screen Buttons: Use the arrows to adjust pitch or the ↻ button to re-spell the note.
+
 ## Installation
+(This applies if you want to use the application from the source code.  If you are running the application on a hosted web platform you can ignore this section.)
 
 ### Prerequisites
 You need **Python 3.10 or higher** installed on your computer.
@@ -45,27 +63,16 @@ python app.py
 ```
 Once running, open your browser to: http://127.0.0.1:5001
 
-## Using the App
-  * Select a Part: Click on a voice box (Bass, Bari, Lead, or Tenor) or use Tab (and Shift-Tab) to cycle through them.
-
-  * Typing Notes: When a part is selected, simply type the letter (A-G) to change the note.
-
-### Note Notation
-  * Accidentals: Use b for flat, # for sharp, bb for double-flat, and x for double-sharp.
-  * Octaves: Follow the letter with an octave number (e.g., G3, Bb3, Cx4).
-  * Enharmonics: Click the Circular Arrow (↻) or press Enter to cycle through enharmonic spellings (e.g., changing a G# to an Ab).
-
-### Controls
-  * Arrow Keys (Up/Down): Move the selected note up or down by a semitone.
-  * On-Screen Buttons: Use the arrows to adjust pitch or the ↻ button to re-spell the note.
-
 ## Development & Testing
 To run the automated test suite and verify the music theory logic:
 ```
 python -m unittest discover tests
 ```
 
+To run the browser unit tests, with the app running, navagate to http://127.0.0.1:5001/tests/js.
+
 ## Contributing
 Feedback and contributions are welcome!
-For bugs, pain points during installation, or feature requests, please open an Issue or join the Discussions.
+For bugs, pain points during installation, or feature requests, please visit [the GitHub page for the project](https://github.com/trovatore/BarbershopChordCalculator), where you can open an Issue or join the Discussions.
 Pull requests are encouraged.
+
