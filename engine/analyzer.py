@@ -4,10 +4,11 @@ from music21 import chord, interval
 
 class ChordAnalyzer:
     def __init__(self, notes):
+        # sanitized ensures 'x' is handled as '##' for music21
         sanitized = [n.replace("x", "##") for n in notes]
         try:
             self.chord_obj = chord.Chord(sanitized)
-        except Exception as e:
+        except Exception:
             self.chord_obj = None
         self.parts = ["Bass", "Bari", "Lead", "Tenor"]
 
@@ -17,6 +18,8 @@ class ChordAnalyzer:
         Specifically handles incomplete Ninth chords.
         """
         c = self.chord_obj
+        if not c:
+            return "Unknown Chord"
         root = c.root()
         intervals = {interval.Interval(root, p).directedSimpleName for p in c.pitches}
 
@@ -47,7 +50,6 @@ class ChordAnalyzer:
 
         i = interval.Interval(root, p_target)
         name = i.directedSimpleName
-
         role_map = {
             "P1": "Root",
             "m2": "Minor 2nd",
@@ -85,7 +87,6 @@ class ChordAnalyzer:
         }
         pitches = c.pitches
         span = max(p.ps for p in pitches) - min(p.ps for p in pitches) if pitches else 0
-
         return {
             "common_name": self._get_barbershop_name(),
             "inversion": inv_names.get(c.inversion(), f"{c.inversion()} Inversion"),
