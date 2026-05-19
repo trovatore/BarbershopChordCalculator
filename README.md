@@ -11,7 +11,7 @@ If you want to use it for SSAA or SATB, you could just pretend it's TTBB; the an
 ![screenshot](images/image.png)
 
 ## License
-This application and its source code are released under the [MIT License](LICENSE).  There is no warranty of any kind, express or implied.
+This application and its source code are released under the [MIT License](https://github.com/trovatore/BarbershopChordCalculator/blob/main/LICENSE).  There is no warranty of any kind, express or implied.
 
 ## Using the App
   * Select a Part: Click on a voice box (Bass, Bari, Lead, or Tenor) or use Tab (and Shift-Tab) to cycle through them.  The Right Arrow and Left Arrow will also cycle through the different voices.
