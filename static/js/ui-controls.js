@@ -1,5 +1,6 @@
+/* ui-controls.js Serial: #014 */
 import { ACC_TO_STR } from './spelling.js';
-export const SERIAL = "#013";
+export const SERIAL = "#014";
 
 export function renderControls(container, chordState, selectedIdx, onManualUpdate, onUpdateNote, onCycle) {
     container.innerHTML = '';
@@ -10,7 +11,10 @@ export function renderControls(container, chordState, selectedIdx, onManualUpdat
         const display = p.step.toUpperCase() + ACC_TO_STR[p.acc] + p.oct;
         div.innerHTML = `
             <div style="font-weight:600; font-size: 0.7rem; margin-bottom:5px; color:#666">${p.part.toUpperCase()}</div>
-            <input type="text" class="note-input" value="${display}">
+            <div class="note-row">
+                <input type="text" class="note-input" value="${display}">
+                <div class="tuning-display" id="tuning-${i}" title="Just Intonation adjustment (cents)"></div>
+            </div>
             <div class="btn-group">
                 <button class="down-btn">↓</button>
                 <button class="up-btn">↑</button>
