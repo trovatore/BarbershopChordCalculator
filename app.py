@@ -1,22 +1,30 @@
-from flask import Flask, render_template, request, jsonify, send_from_directory
+from flask import (
+    Flask,
+    render_template,
+    request,
+    jsonify,
+    send_from_directory,
+    Response,
+)
 from engine.analyzer import ChordAnalyzer
 import os
+from typing import Union, Tuple, List, Any
 
 app = Flask(__name__)
 
 
 @app.route("/")
-def index():
+def index() -> str:
     return render_template("index.html")
 
 
 @app.route("/tests/js")
-def js_tests():
+def js_tests() -> str:
     return render_template("js-tests.html")
 
 
 @app.route("/help")
-def help():
+def help() -> Union[str, Tuple[str, int]]:
     try:
         base_dir = os.path.dirname(os.path.abspath(__file__))
         with open(os.path.join(base_dir, "README.md"), "r", encoding="utf-8") as f:
@@ -27,16 +35,18 @@ def help():
 
 
 @app.route("/images/<path:filename>")
-def serve_images(filename):
+def serve_images(filename: str) -> Response:
     """Explicitly serve images from the root images directory."""
     return send_from_directory("images", filename)
 
 
 @app.route("/analyze", methods=["POST"])
-def analyze():
+def analyze() -> Union[Response, Tuple[Response, int]]:
     try:
-        notes = request.json.get("notes", [])
-        result = ChordAnalyzer(notes).analyze()
+        data: Any = request.json
+        notes: List[str] = data.get("notes", []) if data else []
+        allow_rootless: bool = data.get("allow_rootless", False) if data else False
+        result = ChordAnalyzer(notes, allow_rootless_ninths=allow_rootless).analyze()
         return jsonify(result)
     except Exception as e:
         return jsonify({"error": str(e)}), 400
