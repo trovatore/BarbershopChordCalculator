@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Barbershop Spectral Analysis</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: system-ui, sans-serif; background: #f8f9fa; margin: 0; padding: 20px; }
+        .container { max-width: 1000px; margin: 0 auto; }
+        .card { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 20px; }
+        h1 { font-size: 1.5rem; color: #333; margin-top: 0; }
+        .chart-container { position: relative; height: 400px; width: 100%; }
+        .peak-tables { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 15px; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-top: 10px; }
+        th { text-align: left; background: #eee; padding: 8px; }
+        td { padding: 8px; border-bottom: 1px solid #f0f0f0; }
+        .part-Bass { color: #d32f2f; } .part-Bari { color: #f57c00; }
+        .part-Lead { color: #388e3c; } .part-Tenor { color: #1976d2; }
+        .part-Summed { color: #333; font-weight: bold; }
+        @media (max-width: 600px) { .chart-container { height: 300px; } }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <h1>Spectrum Analysis</h1>
+            <div class="chart-container"><canvas id="spectrumChart"></canvas></div>
+        </div>
+        <div id="peakContainer" class="peak-tables"></div>
+    </div>
+
+    <script>
+        const data = JSON.parse(localStorage.getItem('chordAnalysisData'));
+        if (!data) { document.body.innerHTML = "<h1>No data found.</h1>"; }
+
+        const ctx = document.getElementById('spectrumChart').getContext('2d');
+        const colors = { 'Bass': '#d32f2f', 'Bari': '#f57c00', 'Lead': '#388e3c', 'Tenor': '#1976d2', 'Summed': '#333' };
+
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: data.freqs,
+                datasets: data.parts.map(p => ({
+                    label: p.name,
+                    data: p.magnitudes,
+                    borderColor: colors[p.name],
+                    borderWidth: p.name === 'Summed' ? 2 : 1,
+                    pointRadius: 0,
+                    fill: false
+                }))
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: { type: 'logarithmic', title: { display: true, text: 'Frequency (Hz)' }, min: 50, max: 5000 },
+                    y: { title: { display: true, text: 'Magnitude (dB)' }, min: -80 }
+                }
+            }
+        });
+
+        const peakDiv = document.getElementById('peakContainer');
+        data.parts.forEach(p => {
+            let html = `<div class="card"><h2 class="part-${p.name}">${p.name} Peaks</h2><table>
+                <thead><tr><th>#</th><th>Freq</th><th>Note</th><th>dB</th></tr></thead><tbody>`;
+            p.peaks.forEach((pk, i) => {
+                const cents = pk.cents >= 0 ? "+" + pk.cents : pk.cents;
+                html += `<tr><td>${i+1}</td><td>${pk.freq}Hz</td><td><strong>${pk.note}</strong> (${cents})</td><td>${pk.db}</td></tr>`;
+            });
+            html += `</tbody></table></div>`;
+            peakDiv.innerHTML += html;
+        });
+    </script>
+</body>
+</html>
