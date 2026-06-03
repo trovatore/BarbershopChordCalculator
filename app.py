@@ -51,6 +51,9 @@ def analyze() -> Union[Response, Tuple[Response, int]]:
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
+@app.route("/analysis")
+def spectral_analysis() -> str:
+    return render_template("analysis.html")
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5001))
