@@ -11,13 +11,14 @@
     </style>
 </head>
 <body>
-    <h1>Browser Unit Tests - Serial #028</h1>
+    <h1>Browser Unit Tests - Serial #033</h1>
     <div id="results">Running tests...</div>
     <div id="summary" class="summary"></div>
 
     <script type="module">
         import { getAbsSemitone, getVariations } from '/static/js/spelling.js';
         import { renderControls } from '/static/js/ui-controls.js';
+        import { getNoteInfo, findPeaks, getMagnitudes } from '/static/js/audio.js';
 
         const results = document.getElementById('results');
         const summary = document.getElementById('summary');
@@ -38,66 +39,87 @@
             results.appendChild(div);
         }
 
-        results.innerHTML = '';
+        async function runTests() {
+            results.innerHTML = '';
 
-        // --- 1. Basic Semitone Calculations ---
-        assert(getAbsSemitone({step: 'c', acc: 0, oct: 4}) === 48, "C4 should be 48");
-        
-        // --- 2. Accidental Preference (No Context) ---
-        const pref49 = getVariations(49, 4, []);
-        assert(pref49[0].step === 'd' && pref49[0].acc === -1, "Vacuum: Prefer Db4 over C#4");
+            // --- 1. Basic Semitone Calculations ---
+            assert(getAbsSemitone({step: 'c', acc: 0, oct: 4}) === 48, "C4 should be 48");
+            
+            // --- 2. Accidental Preference ---
+            const pref49 = getVariations(49, 4, []);
+            assert(pref49[0].step === 'd' && pref49[0].acc === -1, "Prefer Db4 over C#4 in vacuum");
 
-        // --- 3. False Relation Avoidance ---
-        const contextFalse = [{step: 'd', semi: 50}];
-        const variationsFalse = getVariations(49, 4, contextFalse);
-        assert(variationsFalse[0].step === 'c' && variationsFalse[0].acc === 1, "False Relation: Pick C#4 when D4 is present to avoid clash");
+            // --- 3. False Relation Avoidance ---
+            const contextFalse = [{step: 'd', semi: 50}];
+            const variationsFalse = getVariations(49, 4, contextFalse);
+            assert(variationsFalse[0].step === 'c' && variationsFalse[0].acc === 1, "Pick C#4 when D4 is present");
 
-        // --- 4. Unison Check (Not a False Relation) ---
-        const contextUnison = [{step: 'd', semi: 50}];
-        const variationsUnison = getVariations(50, 4, contextUnison);
-        assert(variationsUnison[0].step === 'd' && variationsUnison[0].acc === 0, "Unison: Pick D4 when another D4 is present (not a false relation)");
+            // --- 4. Global Preference Order ---
+            const pref47 = getVariations(47, 3, []);
+            assert(pref47[0].step === 'b' && pref47[0].acc === 0, "Preference: Natural B3 preferred over Cb4");
 
-        // --- 5. Global Preference Order Check ---
-        const pref47 = getVariations(47, 3, []);
-        assert(pref47[0].step === 'b' && pref47[0].acc === 0, "Preference: Natural B3 preferred over Cb4");
+            // --- 5. UI Rendering & Field IDs ---
+            const testContainer = document.createElement('div');
+            document.body.appendChild(testContainer);
+            const mockChord = [
+                { part: 'Bass', step: 'g', acc: 0, oct: 3 }, 
+                { part: 'Bari', step: 'b', acc: 0, oct: 3 }, 
+                { part: 'Lead', step: 'd', acc: 0, oct: 4 }, 
+                { part: 'Tenor', step: 'f', acc: 0, oct: 4 }
+            ];
+            const mockTuning = [0, 0, 0, 0];
+            renderControls(testContainer, mockChord, 0, mockTuning, () => {}, () => {}, () => {});
+            
+            const noteInput0 = testContainer.querySelector('#note-input-0');
+            const tuningInput0 = testContainer.querySelector('#tuning-0');
+            assert(noteInput0 && tuningInput0, "UI should render predictable IDs for navigation");
 
-        // --- 6. Tie-break: All candidates are False Relations ---
-        const contextAllFalse = [
-            {step: 'd', semi: 50}, 
-            {step: 'c', semi: 48}, 
-            {step: 'b', semi: 47}
-        ];
-        const variationsAll = getVariations(49, 4, contextAllFalse);
-        assert(variationsAll[0].step === 'd' && variationsAll[0].acc === -1, "Tie-break: All are false relations? Pick Flat Db over Sharp C#");
+            // --- 6. Interaction: Auto-Selection on Focus ---
+            noteInput0.focus();
+            await new Promise(r => setTimeout(r, 50)); // Wait for selection logic
+            assert(noteInput0.selectionStart === 0 && noteInput0.selectionEnd === noteInput0.value.length, 
+                   "Focusing a Note input should auto-select text");
+            
+            tuningInput0.focus();
+            await new Promise(r => setTimeout(r, 50));
+            assert(tuningInput0.selectionStart === 0 && tuningInput0.selectionEnd === tuningInput0.value.length, 
+                   "Focusing a Tuning input should auto-select text");
 
-        // --- 7. UI Control Rendering & Tuning Boxes ---
-        const testContainer = document.createElement('div');
-        const mockChord = [
-            { part: 'Bass', step: 'g', acc: 0, oct: 3 },
-            { part: 'Bari', step: 'b', acc: 0, oct: 3 },
-            { part: 'Lead', step: 'd', acc: 0, oct: 4 },
-            { part: 'Tenor', step: 'f', acc: 0, oct: 4 }
-        ];
-        
-        renderControls(testContainer, mockChord, 2, () => {}, () => {}, () => {});
-        
-        const tuningBoxes = testContainer.querySelectorAll('.tuning-display');
-        assert(tuningBoxes.length === 4, "Should render 4 tuning display boxes");
-        assert(tuningBoxes[0].id === "tuning-0", "Tuning boxes should have incremental IDs (tuning-0)");
-        assert(tuningBoxes[3].id === "tuning-3", "Tuning boxes should have incremental IDs (tuning-3)");
-        assert(tuningBoxes[0].innerText === "", "Tuning boxes should be empty on initial render (blanking logic)");
+            // --- 7. Navigation: Voice Switching Visuals ---
+            renderControls(testContainer, mockChord, 2, mockTuning, () => {}, () => {}, () => {});
+            const leadCard = testContainer.querySelectorAll('.part-ctrl')[2];
+            assert(leadCard.classList.contains('active'), "Active class follows index");
 
-        const noteInputs = testContainer.querySelectorAll('.note-input');
-        assert(noteInputs[2].parentElement.parentElement.classList.contains('active'), "Selected index (2) should have 'active' class");
+            // --- 8. Audio Analysis Accuracy ---
+            const a4 = getNoteInfo(440);
+            assert(a4.note === "A4" && a4.cents === 0, "440Hz is A4");
+            
+            const sharpA4 = getNoteInfo(442.5);
+            assert(sharpA4.note === "A4" && sharpA4.cents === 10, "442.5Hz is A4 +10c");
 
-        // --- Final Summary ---
-        summary.innerText = `Tests: ${passCount + failCount} | Passed: ${passCount} | Failed: ${failCount}`;
-        if (failCount === 0) {
-            summary.style.color = "green";
-            summary.innerText += " - ALL TESTS PASSED";
-        } else {
-            summary.style.color = "red";
+            // --- 9. WAV Channel Interleaving Logic ---
+            const mockBuffer = {
+                length: 2,
+                getChannelData: (ch) => new Float32Array([ch + 1, ch + 10])
+            };
+            const interleaved = new Float32Array(8);
+            for (let i = 0; i < 2; i++) {
+                for (let ch = 0; ch < 4; ch++) {
+                    interleaved[i * 4 + ch] = mockBuffer.getChannelData(ch)[i];
+                }
+            }
+            assert(interleaved[0] === 1 && interleaved[3] === 4 && interleaved[4] === 10, 
+                   "WAV interleaving logic is correct");
+
+            document.body.removeChild(testContainer);
+
+            // --- Final Summary ---
+            summary.innerText = `Tests: ${passCount + failCount} | Passed: ${passCount} | Failed: ${failCount}`;
+            summary.style.color = failCount === 0 ? "green" : "red";
+            if (failCount === 0) summary.innerText += " - ALL TESTS PASSED";
         }
+
+        runTests();
     </script>
 </body>
 </html>

@@ -46,14 +46,19 @@ def analyze() -> Union[Response, Tuple[Response, int]]:
         data: Any = request.json
         notes: List[str] = data.get("notes", []) if data else []
         allow_rootless: bool = data.get("allow_rootless", False) if data else False
-        result = ChordAnalyzer(notes, allow_rootless_ninths=allow_rootless).analyze()
+        tuning_style: str = data.get("tuning_style", "just") if data else "just"
+        result = ChordAnalyzer(notes, allow_rootless_ninths=allow_rootless).analyze(
+            tuning_style=tuning_style
+        )
         return jsonify(result)
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
+
 @app.route("/analysis")
 def spectral_analysis() -> str:
     return render_template("analysis.html")
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5001))
