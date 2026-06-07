@@ -29,11 +29,11 @@ export function getVariations(targetSemi, currentOct, existingNotes) {
     return variations.sort((a, b) => {
         // 1. False Relation Priority
         // Count how many other voices this spelling clashes with.
-        // A clash is same letter name but different pitch.
+        // A clash is same letter name but different pitch ignoring octave.
         const getFalseCount = (v) => {
             let count = 0;
             notes.forEach(other => {
-                if (other.step === v.step && Number(other.semi) !== tSemi) {
+                if (other.step === v.step && (Number(other.semi)-tSemi) % 12 !== 0) {
                     count++;
                 }
             });

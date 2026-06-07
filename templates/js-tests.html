@@ -57,7 +57,12 @@
         const variationsUnison = getVariations(50, 4, contextUnison);
         assert(variationsUnison[0].step === 'd' && variationsUnison[0].acc === 0, "Unison: Pick D4 when another D4 is present (not a false relation)");
 
-        // --- 5. Global Preference Order Check ---
+        // --- 4b. Cross-octave unison Check (Not a False Relation) ---
+        const contextCrossOctaveUnison = [{step: 'd', semi: 50}];
+        const variationsCrossOctaveUnison = getVariations(62, 5, contextCrossOctaveUnison);
+
+        assert(variationsCrossOctaveUnison[0].step === 'd' && variationsCrossOctaveUnison[0].acc === 0 && variationsCrossOctaveUnison[0].oct === 5, "Cross-octave unison: Pick D5 when a D4 is present");
+        // --- 5. Global Preference Order ---
         const pref47 = getVariations(47, 3, []);
         assert(pref47[0].step === 'b' && pref47[0].acc === 0, "Preference: Natural B3 preferred over Cb4");
 
