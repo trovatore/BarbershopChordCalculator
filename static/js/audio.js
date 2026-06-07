@@ -1,7 +1,7 @@
-/* audio.js Serial: #007 */
+/* audio.js Serial: #006 */
 import { getAbsSemitone } from './spelling.js';
 
-export const SERIAL = "#007";
+export const SERIAL = "#006";
 
 let audioCtx = null;
 const FORMANT_MAP = {
@@ -82,7 +82,7 @@ export async function saveChordAsWav(chordState, vowel = 'a', tuningData = null)
 /**
  * Standard Radix-2 FFT Implementation (O(N log N))
  */
-export function fft(real, imag) {
+function fft(real, imag) {
     const n = real.length;
     if (n <= 1) return;
     const evenReal = new Float32Array(n / 2), evenImag = new Float32Array(n / 2);
@@ -102,7 +102,7 @@ export function fft(real, imag) {
     }
 }
 
-export function getMagnitudes(signal, sr) {
+function getMagnitudes(signal, sr) {
     const n = signal.length;
     const real = new Float32Array(signal), imag = new Float32Array(n);
     fft(real, imag);
@@ -116,7 +116,7 @@ export function getMagnitudes(signal, sr) {
 }
 
 export async function analyzeAndShow(chordState, vowel, tuningData) {
-    const duration = 5.0, sr = 44100, N = 16384; 
+    const duration = 5.0, sr = 44100, N = 16384; // 16k is plenty for analysis
     const offlineCtx = new OfflineAudioContext(4, sr * duration, sr);
     setupAudioGraph(offlineCtx, chordState, vowel, 0, duration, tuningData, true);
     const buffer = await offlineCtx.startRendering();
@@ -142,7 +142,7 @@ export async function analyzeAndShow(chordState, vowel, tuningData) {
     window.open('/analysis', '_blank');
 }
 
-export function findPeaks(mag, freqs) {
+function findPeaks(mag, freqs) {
     const peaks = [];
     const minSNR = 10;
     for (let i = 2; i < mag.length - 2; i++) {
@@ -159,9 +159,9 @@ export function findPeaks(mag, freqs) {
     return peaks.sort((a, b) => b.db - a.db).slice(0, 10);
 }
 
-export function getNoteInfo(f) {
+function getNoteInfo(f) {
     const semis = 12 * Math.log2(f / 440) + 57;
-    const noteNames = ["C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"];
+    const noteNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
     const rounded = Math.round(semis);
     const note = noteNames[((rounded % 12) + 12) % 12] + Math.floor(rounded / 12);
     const cents = Math.round((semis - rounded) * 100);
