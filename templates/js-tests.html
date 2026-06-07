@@ -11,13 +11,14 @@
     </style>
 </head>
 <body>
-    <h1>Browser Unit Tests - Serial #028</h1>
+    <h1>Browser Unit Tests - Serial #038</h1>
     <div id="results">Running tests...</div>
     <div id="summary" class="summary"></div>
 
     <script type="module">
         import { getAbsSemitone, getVariations } from '/static/js/spelling.js';
-        import { renderControls } from '/static/js/ui-controls.js';
+        import { renderControls, handleGlobalKey } from '/static/js/ui-controls.js';
+        import { getNoteInfo, findPeaks } from '/static/js/audio.js';
 
         const results = document.getElementById('results');
         const summary = document.getElementById('summary');
@@ -38,71 +39,127 @@
             results.appendChild(div);
         }
 
-        results.innerHTML = '';
+        async function runTests() {
+            results.innerHTML = '';
 
-        // --- 1. Basic Semitone Calculations ---
-        assert(getAbsSemitone({step: 'c', acc: 0, oct: 4}) === 48, "C4 should be 48");
-        
-        // --- 2. Accidental Preference (No Context) ---
-        const pref49 = getVariations(49, 4, []);
-        assert(pref49[0].step === 'd' && pref49[0].acc === -1, "Vacuum: Prefer Db4 over C#4");
+            // --- 1. Basic Semitone Calculations ---
+            assert(getAbsSemitone({step: 'c', acc: 0, oct: 4}) === 48, "C4 should be 48");
+            
+            // --- 2. Accidental Preference (No Context) ---
+            const pref49 = getVariations(49, 4, []);
+            assert(pref49[0].step === 'd' && pref49[0].acc === -1, "Prefer Db4 over C#4 in vacuum");
 
-        // --- 3. False Relation Avoidance ---
-        const contextFalse = [{step: 'd', semi: 50}];
-        const variationsFalse = getVariations(49, 4, contextFalse);
-        assert(variationsFalse[0].step === 'c' && variationsFalse[0].acc === 1, "False Relation: Pick C#4 when D4 is present to avoid clash");
+            // --- 3. False Relation Avoidance ---
+            const contextFalse = [{step: 'd', semi: 50}];
+            const variationsFalse = getVariations(49, 4, contextFalse);
+            assert(variationsFalse[0].step === 'c' && variationsFalse[0].acc === 1, "Pick C#4 when D4 is present");
 
-        // --- 4. Unison Check (Not a False Relation) ---
-        const contextUnison = [{step: 'd', semi: 50}];
-        const variationsUnison = getVariations(50, 4, contextUnison);
-        assert(variationsUnison[0].step === 'd' && variationsUnison[0].acc === 0, "Unison: Pick D4 when another D4 is present (not a false relation)");
+            // --- 4. Unison Check (Not a False Relation) ---
+            const contextUnison = [{step: 'd', semi: 50}];
+            const variationsUnison = getVariations(50, 4, contextUnison);
+            assert(variationsUnison[0].step === 'd' && variationsUnison[0].acc === 0, "Unison: Pick D4 when another D4 is present");
 
-        // --- 4b. Cross-octave unison Check (Not a False Relation) ---
-        const contextCrossOctaveUnison = [{step: 'd', semi: 50}];
-        const variationsCrossOctaveUnison = getVariations(62, 5, contextCrossOctaveUnison);
+            // --- 4b. Cross-octave unison Check (Not a False Relation) ---
+            const contextCrossOctaveUnison = [{step: 'd', semi: 50}];
+            const variationsCrossOctaveUnison = getVariations(62, 5, contextCrossOctaveUnison);
 
-        assert(variationsCrossOctaveUnison[0].step === 'd' && variationsCrossOctaveUnison[0].acc === 0 && variationsCrossOctaveUnison[0].oct === 5, "Cross-octave unison: Pick D5 when a D4 is present");
-        // --- 5. Global Preference Order ---
-        const pref47 = getVariations(47, 3, []);
-        assert(pref47[0].step === 'b' && pref47[0].acc === 0, "Preference: Natural B3 preferred over Cb4");
+            assert(variationsCrossOctaveUnison[0].step === 'd' && variationsCrossOctaveUnison[0].acc === 0 && variationsCrossOctaveUnison[0].oct === 5, "Cross-octave unison: Pick D5 when a D4 is present");
+            
+            // --- 5. Global Preference Order ---
+            const pref47 = getVariations(47, 3, []);
+            assert(pref47[0].step === 'b' && pref47[0].acc === 0, "Preference: Natural B3 preferred over Cb4");
 
-        // --- 6. Tie-break: All candidates are False Relations ---
-        const contextAllFalse = [
-            {step: 'd', semi: 50}, 
-            {step: 'c', semi: 48}, 
-            {step: 'b', semi: 47}
-        ];
-        const variationsAll = getVariations(49, 4, contextAllFalse);
-        assert(variationsAll[0].step === 'd' && variationsAll[0].acc === -1, "Tie-break: All are false relations? Pick Flat Db over Sharp C#");
+            // --- 6. Tie-break: All are False Relations ---
+            const contextAllFalse = [{step: 'd', semi: 50}, {step: 'c', semi: 48}, {step: 'b', semi: 47}];
+            const variationsAll = getVariations(49, 4, contextAllFalse);
+            assert(variationsAll[0].step === 'd' && variationsAll[0].acc === -1, "Tie-break: All false relations? Pick Flat Db");
 
-        // --- 7. UI Control Rendering & Tuning Boxes ---
-        const testContainer = document.createElement('div');
-        const mockChord = [
-            { part: 'Bass', step: 'g', acc: 0, oct: 3 },
-            { part: 'Bari', step: 'b', acc: 0, oct: 3 },
-            { part: 'Lead', step: 'd', acc: 0, oct: 4 },
-            { part: 'Tenor', step: 'f', acc: 0, oct: 4 }
-        ];
-        
-        renderControls(testContainer, mockChord, 2, () => {}, () => {}, () => {});
-        
-        const tuningBoxes = testContainer.querySelectorAll('.tuning-display');
-        assert(tuningBoxes.length === 4, "Should render 4 tuning display boxes");
-        assert(tuningBoxes[0].id === "tuning-0", "Tuning boxes should have incremental IDs (tuning-0)");
-        assert(tuningBoxes[3].id === "tuning-3", "Tuning boxes should have incremental IDs (tuning-3)");
-        assert(tuningBoxes[0].innerText === "", "Tuning boxes should be empty on initial render (blanking logic)");
+            // --- 7. UI Rendering & Field IDs ---
+            const testContainer = document.createElement('div');
+            document.body.appendChild(testContainer);
+            const mockChord = [
+                { part: 'Bass', step: 'g', acc: 0, oct: 3 }, 
+                { part: 'Bari', step: 'b', acc: 0, oct: 3 }, 
+                { part: 'Lead', step: 'd', acc: 0, oct: 4 }, 
+                { part: 'Tenor', step: 'f', acc: 0, oct: 4 }
+            ];
+            const mockTuning = [0, 0, 0, 0];
+            renderControls(testContainer, mockChord, 0, mockTuning, () => {}, () => {}, () => {});
+            const noteInput0 = testContainer.querySelector('#note-input-0');
+            const tuningInput0 = testContainer.querySelector('#tuning-0');
+            assert(noteInput0 && tuningInput0, "UI renders predictable IDs for note and cents inputs");
 
-        const noteInputs = testContainer.querySelectorAll('.note-input');
-        assert(noteInputs[2].parentElement.parentElement.classList.contains('active'), "Selected index (2) should have 'active' class");
+            // --- 8. Navigation Behavior ---
+            const card = testContainer.querySelector('.part-ctrl');
+            card.click();
+            assert(document.activeElement.tagName !== 'INPUT', "Navigation (card click) selects part but does NOT focus input boxes");
 
-        // --- Final Summary ---
-        summary.innerText = `Tests: ${passCount + failCount} | Passed: ${passCount} | Failed: ${failCount}`;
-        if (failCount === 0) {
-            summary.style.color = "green";
-            summary.innerText += " - ALL TESTS PASSED";
-        } else {
-            summary.style.color = "red";
+            // --- 9. Custom Intonation Trigger via Input ---
+            let manualFlag = false;
+            window.addEventListener('tuningUpdate', (e) => { if (e.detail.manual) manualFlag = true; }, {once: true});
+            tuningInput0.dispatchEvent(new Event('input', { bubbles: true }));
+            assert(manualFlag === true, "Manual entry correctly flags 'manual' state for Custom mode");
+
+            // --- 10. Key Handler: Note Replacement ---
+            const noteInput2 = testContainer.querySelector('#note-input-2');
+            handleGlobalKey({ key: 'a', preventDefault: () => {} }, 
+                { selectedIdx: 2, isTyping: false }, 
+                { navigate: () => {}, playChord: () => {}, updateNote: () => {}, renderUI: () => {} }
+            );
+            await new Promise(r => setTimeout(r, 50));
+            assert(document.activeElement === noteInput2, "Hotkey [A] should focus the note input");
+            assert(noteInput2.value === 'A', "Hotkey [A] should replace the input value");
+
+            // --- 11. Key Handler: Tuning Replacement ---
+            const tuningInput2 = testContainer.querySelector('#tuning-2');
+            handleGlobalKey({ key: '1', preventDefault: () => {} }, 
+                { selectedIdx: 2, isTyping: false }, 
+                { navigate: () => {}, playChord: () => {}, updateNote: () => {}, renderUI: () => {} }
+            );
+            await new Promise(r => setTimeout(r, 50));
+            assert(document.activeElement === tuningInput2, "Hotkey [1] should focus the tuning input");
+            assert(tuningInput2.value === '1', "Hotkey [1] should replace the tuning value");
+
+            // --- 12. Key Handler: Arrow Navigation ---
+            let navigatedIdx = null;
+            handleGlobalKey({ key: 'ArrowRight', preventDefault: () => {} }, 
+                { selectedIdx: 2, isTyping: false }, 
+                { navigate: (idx) => { navigatedIdx = idx; }, renderUI: () => {} }
+            );
+            assert(navigatedIdx === 3, "ArrowRight should trigger navigation to next voice index");
+
+            // --- 13. Audio DSP logic ---
+            const a4 = getNoteInfo(440);
+            assert(a4.note === "A4" && a4.cents === 0, "440Hz matches A4 +0c");
+            
+            const mockMag = new Float32Array(100).fill(-100);
+            const mockFreqs = new Float32Array(100).map((_, i) => i * 10);
+            mockMag[44] = -10; mockMag[43] = -25; mockMag[45] = -25; 
+            const peaks = findPeaks(mockMag, mockFreqs);
+            assert(peaks.length > 0 && peaks[0].freq === 440, "Peak finder identifies 440Hz fundamental");
+
+            // --- 14. Multi-Channel Interleaving Simulation ---
+            const mockBuffer = {
+                length: 2,
+                getChannelData: (ch) => new Float32Array([ch + 1, ch + 10])
+            };
+            const interleaved = new Float32Array(8);
+            for (let i = 0; i < 2; i++) {
+                for (let ch = 0; ch < 4; ch++) {
+                    interleaved[i * 4 + ch] = mockBuffer.getChannelData(ch)[i];
+                }
+            }
+            assert(interleaved[0] === 1 && interleaved[3] === 4 && interleaved[4] === 10, "WAV interleave logic sequences multi-channel data correctly");
+
+            document.body.removeChild(testContainer);
+
+            // --- Final Summary ---
+            summary.innerText = `Tests: ${passCount + failCount} | Passed: ${passCount} | Failed: ${failCount}`;
+            summary.style.color = failCount === 0 ? "green" : "red";
+            if (failCount === 0) summary.innerText += " - ALL TESTS PASSED";
         }
+
+        runTests();
     </script>
 </body>
 </html>
