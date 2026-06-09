@@ -51,6 +51,7 @@
     <div class="settings-grid">
         <div style="display: flex; flex-direction: column; gap: 12px;">
             <label class="checkbox-label"><input type="checkbox" id="rootlessToggle"> Analyze half-diminished as rootless 9ths</label>
+            <label class="checkbox-label">Voices per Part: <input type="number" id="vpsCount" value="4" min="1" max="20" style="width: 45px; padding: 2px; border-radius: 4px; border: 1px solid #ccc;"></label>
             <div class="intonation-selector">
                 <span class="section-label">Intonation:</span>
                 <label class="selector-opt"><input type="radio" name="intonation" value="equal"> Equal</label>
@@ -97,12 +98,12 @@ import { drawChord, SERIAL as S_NOT } from '/static/js/notation.js';
 import { playChord, saveChordAsWav, analyzeAndShow, SERIAL as S_AUD } from '/static/js/audio.js';
 
 const SHOW_SERIALS = false;
-const S_IDX = "#047";
+const S_IDX = "#049";
 
 const manifestEl = document.getElementById('manifest');
 const docsLink = "<a href='/help' target='_blank'>Documentation</a>";
 if (SHOW_SERIALS) {
-    manifestEl.innerHTML = "index: " + S_IDX + " | " + docsLink + "<br>spel: " + S_SPEL + "<br>ui: #023<br>not: " + S_NOT + "<br>aud: #007<br>test: #038";
+    manifestEl.innerHTML = "index: " + S_IDX + " | " + docsLink + "<br>spel: " + S_SPEL + "<br>ui: #023<br>not: " + S_NOT + "<br>aud: " + S_AUD + "<br>test: #038";
 } else {
     manifestEl.innerHTML = docsLink;
 }
@@ -211,13 +212,13 @@ window.addEventListener('tuningUpdate', (e) => {
     }
 });
 
-document.getElementById('playBtn').onclick = () => playChord(chordState, document.querySelector('input[name="vowel"]:checked').value, tuningState);
-document.getElementById('saveBtn').onclick = () => saveChordAsWav(chordState, document.querySelector('input[name="vowel"]:checked').value, tuningState);
+document.getElementById('playBtn').onclick = () => playChord(chordState, document.querySelector('input[name="vowel"]:checked').value, tuningState, parseInt(document.getElementById('vpsCount').value));
+document.getElementById('saveBtn').onclick = () => saveChordAsWav(chordState, document.querySelector('input[name="vowel"]:checked').value, tuningState, parseInt(document.getElementById('vpsCount').value));
 document.getElementById('analyzeBtn').onclick = async () => {
     const btn = document.getElementById('analyzeBtn');
     btn.disabled = true;
     setTimeout(async () => {
-        try { await analyzeAndShow(chordState, document.querySelector('input[name="vowel"]:checked').value, tuningState); }
+        try { await analyzeAndShow(chordState, document.querySelector('input[name="vowel"]:checked').value, tuningState, parseInt(document.getElementById('vpsCount').value)); }
         finally { btn.disabled = false; }
     }, 50);
 };

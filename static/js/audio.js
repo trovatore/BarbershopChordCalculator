@@ -1,7 +1,7 @@
-/* audio.js Serial: #007 */
+/* audio.js Serial: #009 */
 import { getAbsSemitone } from './spelling.js';
 
-export const SERIAL = "#007";
+export const SERIAL = "#009";
 
 let audioCtx = null;
 const FORMANT_MAP = {
@@ -11,7 +11,7 @@ const FORMANT_MAP = {
     'ʊ': [440, 1020, 2240], 'u': [300, 870, 2240]
 };
 
-function createVoice(ctx, freq, vowel, startTime, duration) {
+function createVoice(ctx, freq, vowel, startTime, duration, targetGain = 0.05) {
     const attack = 0.15, release = 0.5;
     const formants = FORMANT_MAP[vowel] || FORMANT_MAP['a'];
     const osc = ctx.createOscillator();
@@ -20,14 +20,15 @@ function createVoice(ctx, freq, vowel, startTime, duration) {
 
     const vibrato = ctx.createOscillator();
     const vibratoGain = ctx.createGain();
-    vibrato.frequency.value = 4.8 + (Math.random() * 0.4);
+    // Unique vibrato rate for every singer in the quartet/chorus
+    vibrato.frequency.value = 4.6 + (Math.random() * 1.2); 
     vibratoGain.gain.value = freq * 0.006;
     vibrato.connect(vibratoGain); vibratoGain.connect(osc.frequency);
 
     const voiceGain = ctx.createGain();
     voiceGain.gain.setValueAtTime(0, startTime);
-    voiceGain.gain.linearRampToValueAtTime(0.05, startTime + attack);
-    voiceGain.gain.setValueAtTime(0.05, startTime + duration - release);
+    voiceGain.gain.linearRampToValueAtTime(targetGain, startTime + attack);
+    voiceGain.gain.setValueAtTime(targetGain, startTime + duration - release);
     voiceGain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
 
     formants.forEach((f, idx) => {
@@ -40,33 +41,51 @@ function createVoice(ctx, freq, vowel, startTime, duration) {
     return { osc, vibrato, gain: voiceGain };
 }
 
-function setupAudioGraph(ctx, chordState, vowel, startTime, duration, tuningData, multiChannel = false) {
+function setupAudioGraph(ctx, chordState, vowel, startTime, duration, tuningData, numVoicesPerPart = 1, multiChannel = false) {
     let merger = null;
     if (multiChannel) {
         merger = ctx.createChannelMerger(4);
         merger.connect(ctx.destination);
     }
+    
+    // Scale gain so the total amplitude of the part is the arithmetic mean
+    const individualGain = 0.05 / Math.max(1, numVoicesPerPart);
+
     chordState.forEach((note, i) => {
-        const cents = (tuningData && tuningData[i] !== undefined) ? tuningData[i] : 0;
-        const freq = 440 * Math.pow(2, (getAbsSemitone(note) - 57 + (cents / 100)) / 12);
-        const voice = createVoice(ctx, freq, vowel, startTime, duration);
-        if (multiChannel) voice.gain.connect(merger, 0, i);
-        else voice.gain.connect(ctx.destination);
-        voice.osc.start(startTime); voice.vibrato.start(startTime);
-        voice.osc.stop(startTime + duration); voice.vibrato.stop(startTime + duration);
+        const baseCents = (tuningData && tuningData[i] !== undefined) ? tuningData[i] : 0;
+        
+        for (let v = 0; v < numVoicesPerPart; v++) {
+            // Independent start jitter for every voice to randomize phase
+            const phaseJitter = Math.random() * 0.08;
+            const voiceStart = startTime + phaseJitter;
+            
+            // Subtle micro-tuning variance (±2 cents) creates a natural chorus "wash"
+            const microtuning = (Math.random() - 0.5) * 4;
+            const freq = 440 * Math.pow(2, (getAbsSemitone(note) - 57 + ((baseCents + microtuning) / 100)) / 12);
+            
+            const voice = createVoice(ctx, freq, vowel, voiceStart, duration, individualGain);
+            
+            if (multiChannel) voice.gain.connect(merger, 0, i);
+            else voice.gain.connect(ctx.destination);
+            
+            voice.osc.start(voiceStart); 
+            voice.vibrato.start(voiceStart);
+            voice.osc.stop(voiceStart + duration); 
+            voice.vibrato.stop(voiceStart + duration);
+        }
     });
 }
 
-export function playChord(chordState, vowel = 'a', tuningData = null) {
+export function playChord(chordState, vowel = 'a', tuningData = null, numVoicesPerPart = 1) {
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     if (audioCtx.state === 'suspended') audioCtx.resume();
-    setupAudioGraph(audioCtx, chordState, vowel, audioCtx.currentTime, 5.0, tuningData);
+    setupAudioGraph(audioCtx, chordState, vowel, audioCtx.currentTime, 5.0, tuningData, numVoicesPerPart);
 }
 
-export async function saveChordAsWav(chordState, vowel = 'a', tuningData = null) {
+export async function saveChordAsWav(chordState, vowel = 'a', tuningData = null, numVoicesPerPart = 1) {
     const duration = 5.0, sr = 44100;
     const offlineCtx = new OfflineAudioContext(4, sr * duration, sr);
-    setupAudioGraph(offlineCtx, chordState, vowel, 0, duration, tuningData, true);
+    setupAudioGraph(offlineCtx, chordState, vowel, 0, duration, tuningData, numVoicesPerPart, true);
     const buffer = await offlineCtx.startRendering();
     const data = new Float32Array(buffer.length * 4);
     for (let i = 0; i < buffer.length; i++) {
@@ -75,12 +94,12 @@ export async function saveChordAsWav(chordState, vowel = 'a', tuningData = null)
     const blob = encodeWAV(data, 4, sr);
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = `chord_4channel_${vowel}.wav`;
+    link.download = `chord_vlq_${numVoicesPerPart}_${vowel}.wav`;
     link.click();
 }
 
 /**
- * Standard Radix-2 FFT Implementation (O(N log N))
+ * Standard Radix-2 FFT Implementation
  */
 export function fft(real, imag) {
     const n = real.length;
@@ -115,10 +134,10 @@ export function getMagnitudes(signal, sr) {
     return { freqs, mag };
 }
 
-export async function analyzeAndShow(chordState, vowel, tuningData) {
+export async function analyzeAndShow(chordState, vowel, tuningData, numVoicesPerPart = 1) {
     const duration = 5.0, sr = 44100, N = 16384; 
     const offlineCtx = new OfflineAudioContext(4, sr * duration, sr);
-    setupAudioGraph(offlineCtx, chordState, vowel, 0, duration, tuningData, true);
+    setupAudioGraph(offlineCtx, chordState, vowel, 0, duration, tuningData, numVoicesPerPart, true);
     const buffer = await offlineCtx.startRendering();
     
     const analysis = { freqs: [], parts: [] };
