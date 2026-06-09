@@ -14,9 +14,20 @@ If you want to use it for SSAA or SATB, you could just pretend it's TTBB; the an
 This application and its source code are released under the [MIT License](https://github.com/trovatore/BarbershopChordCalculator/blob/main/LICENSE).  There is no warranty of any kind, express or implied.
 
 ## Using the App
-  * Select a Part: Click on a voice box (Bass, Bari, Lead, or Tenor) or use Tab (and Shift-Tab) to cycle through them.  The Right Arrow and Left Arrow will also cycle through the different voices.
-
+  * Select a Part: Click on a voice box (Bass, Bari, Lead, or Tenor) or use Right Arrow and Left Arrow to cycle through them.  The Tab and Shift-Tab keys will step through controls.
   * Typing Notes: When a part is selected, simply type the letter (A-G) to change the note, possibly followed by an accidental (#, b, x, or bb), and then an octave number.
+  * Adjusting Custom Intonation: When a part is selected, typing a numeric value will adjust the pitch of the voice by that number of cents, and set the intonation type to "Custom".
+  * Adjusting Voices per Part:  By default the tool will simulate a "very large quartet" (VLQ) with 4 voices per part.  This smooths out certain artifacts in the sound that make the chord sound "too buzzy".  You can adjust this value in the "Voices per Part" box.
+
+## Chord and role identification
+  * The chord name and the roles of each voice in the chord will update whenever a note is changed or respelled.  (Note however that if you are using the tool on the web with the backend running remotely, you may have to wait for the backend to spin up, and some displays might be incorrect during this time.)
+
+## Chord generation
+  * Playback:  Press the "Play" arrow to hear the chord immediately.
+  * Saving:  Press the "Save .wav" button to save the chord as a 4-channel `.wav` file.
+  * Analysis:  Press the "Analyze" button to generate a spectrogram of the chord, broken down by voice part.
+> [NOTE:] There is an element of randomness in chord generation, specifically regarding the vibrato and start-time jitter of each voice.  Therefore the chord will not be identical on each playback, save, or analysis, and the chord you save may not be identical to the one you play back or analyze.  This randomness can be reduced, but not eliminated, by increasing the number of voices per part.
+
 
 ### Note Notation
   * Accidentals: Use b for flat, # for sharp, bb for double-flat, and x for double-sharp.
