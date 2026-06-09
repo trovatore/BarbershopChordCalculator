@@ -1,12 +1,11 @@
 # Barbershop Chord Calculator
-A specialized music theory tool for barbershop quartet singers and arrangers. Enter four notes to identify the chord and the functional role of each voice part.
+A specialized music theory tool for barbershop quartet singers and arrangers. Enter four notes to identify the chord and the functional role of each voice part.  Optionally play the chord, save it to a file, or analyze its spectrum.
 
 The tool is currently tuned for **TTBB barbershop harmony**, following standard quartet engraving conventions:
 * **Tenor & Lead:** Treble Clef (8vb) — Stems Up (Tenor), Stems Down (Lead).
 * **Bari & Bass:** Bass Clef — Stems Up (Bari), Stems Down (Bass).
 
-If you want to use it for SSAA or SATB, you could just pretend it's TTBB; the answers are the same except that open versus closed voicing might be different if you're using it for SATB.  If there is enough demand I will consider adding options for SATB or SSAA.  Or you are welcome to submit a pull request.
-
+If you want to use it for SSAA or SATB, you could just pretend it's TTBB; the chord and role identification are the same except that open versus closed voicing might be different if you're using it for SATB.  (Playback, of course, will be different.)  If there is enough demand I will consider adding options for SATB or SSAA.  Or you are welcome to submit a pull request.
 
 ![screenshot](images/image.png)
 
@@ -18,11 +17,13 @@ This application and its source code are released under the [MIT License](https:
   * Typing Notes: When a part is selected, simply type the letter (A-G) to change the note, possibly followed by an accidental (#, b, x, or bb), and then an octave number.
   * Adjusting Custom Intonation: When a part is selected, typing a numeric value will adjust the pitch of the voice by that number of cents, and set the intonation type to "Custom".
   * Adjusting Voices per Part:  By default the tool will simulate a "very large quartet" (VLQ) with 4 voices per part.  This smooths out certain artifacts in the sound that make the chord sound "too buzzy".  You can adjust this value in the "Voices per Part" box.
+  * Selecting Intonation: The radio buttons for "Intonation:" allow you to choose between equal temperament, just intonation, Pythagorean tuning, or a custom tuning where you specify the difference from equal temperament for each voice.
+  * Selecting a Vowel: The radio buttons under "Playback Vowel:" allow you to choose the vowel by its IPA symbol.  Note that these are not necessarily perfect.  Feel free to let me know if you think a vowel sounds egregiously different from what you expected.
 
-## Chord and role identification
+## Chord and Role Identification
   * The chord name and the roles of each voice in the chord will update whenever a note is changed or respelled.  (Note however that if you are using the tool on the web with the backend running remotely, you may have to wait for the backend to spin up, and some displays might be incorrect during this time.)
 
-## Chord generation
+## Chord Generation
   * Playback:  Press the "Play" arrow to hear the chord immediately.
   * Saving:  Press the "Save .wav" button to save the chord as a 4-channel `.wav` file.
   * Analysis:  Press the "Analyze" button to generate a spectrogram of the chord, broken down by voice part.
@@ -33,10 +34,6 @@ This application and its source code are released under the [MIT License](https:
   * Accidentals: Use b for flat, # for sharp, bb for double-flat, and x for double-sharp.
   * Octaves: Follow the letter with an octave number (e.g., G3, Bb3, Cx4).
   * Enharmonics: Click the Circular Arrow (↻) or press Enter to cycle through enharmonic spellings (e.g., changing a G# to an Ab).
-
-### Controls
-  * Arrow Keys (Up/Down): Move the selected note up or down by a semitone.
-  * On-Screen Buttons: Use the arrows to adjust pitch or the ↻ button to re-spell the note.
 
 ## Installation
 (This applies if you want to use the application from the source code.  If you are running the application on a hosted web platform you can ignore this section.)
