@@ -1,7 +1,7 @@
 /* audio.js Serial: #009 */
 import { getAbsSemitone } from './spelling.js';
 
-export const SERIAL = "#009";
+export const SERIAL = "#010";
 
 let audioCtx = null;
 const FORMANT_MAP = {
@@ -48,8 +48,8 @@ function setupAudioGraph(ctx, chordState, vowel, startTime, duration, tuningData
         merger.connect(ctx.destination);
     }
     
-    // Scale gain so the total amplitude of the part is the arithmetic mean
-    const individualGain = 0.05 / Math.max(1, numVoicesPerPart);
+    // Scale gain to make amplitude more consistent regardless of how many voices are layered per part
+    const individualGain = 0.05 / Math.sqrt(Math.max(1, numVoicesPerPart));
 
     chordState.forEach((note, i) => {
         const baseCents = (tuningData && tuningData[i] !== undefined) ? tuningData[i] : 0;
@@ -59,8 +59,8 @@ function setupAudioGraph(ctx, chordState, vowel, startTime, duration, tuningData
             const phaseJitter = Math.random() * 0.08;
             const voiceStart = startTime + phaseJitter;
             
-            // Subtle micro-tuning variance (±2 cents) creates a natural chorus "wash"
-            const microtuning = (Math.random() - 0.5) * 4;
+            // Subtle micro-tuning variance (±1 cent) creates a natural chorus "wash"
+            const microtuning = (Math.random() - 0.5) * 2;
             const freq = 440 * Math.pow(2, (getAbsSemitone(note) - 57 + ((baseCents + microtuning) / 100)) / 12);
             
             const voice = createVoice(ctx, freq, vowel, voiceStart, duration, individualGain);
