@@ -1,29 +1,51 @@
-/* audio.js Serial: #009 */
+/* audio.js Serial: #015 */
 import { getAbsSemitone } from './spelling.js';
 
-export const SERIAL = "#010";
+export const SERIAL = "#016";
 
 let audioCtx = null;
-const FORMANT_MAP = {
-    'a': [730, 1090, 2440], 'æ': [660, 1720, 2410], 'ɛ': [530, 1840, 2480],
-    'ʌ': [640, 1190, 2390], 'ɔ': [570, 840, 2410], 'e': [390, 2300, 2850],
-    'o': [460, 1100, 2490], 'i': [270, 2290, 3010], 'ɪ': [390, 1990, 2550],
-    'ʊ': [440, 1020, 2240], 'u': [300, 870, 2240]
-};
+let sharedNoiseBuffer = null;
 
-function createVoice(ctx, freq, vowel, startTime, duration, targetGain = 0.05) {
+function getNoiseBuffer(ctx) {
+    if (sharedNoiseBuffer) return sharedNoiseBuffer;
+    const size = ctx.sampleRate * 2;
+    sharedNoiseBuffer = ctx.createBuffer(1, size, ctx.sampleRate);
+    const data = sharedNoiseBuffer.getChannelData(0);
+    for (let i = 0; i < size; i++) data[i] = Math.random() * 2 - 1;
+    return sharedNoiseBuffer;
+}
+
+function createVoice(ctx, freq, startTime, duration, targetGain, opts) {
     const attack = 0.15, release = 0.5;
-    const formants = FORMANT_MAP[vowel] || FORMANT_MAP['a'];
+    const formants = [opts.f1, opts.f2, opts.f3];
     const osc = ctx.createOscillator();
     osc.type = 'sawtooth';
     osc.frequency.setValueAtTime(freq, startTime);
 
     const vibrato = ctx.createOscillator();
+    // Vibrato rate uniformly jittered around mean, with range defined by user.
+    vibrato.frequency.value = opts.vibratoRateMean + ((Math.random() * 2 - 1) * opts.vibratoRateRange / 2);
+
+    const noise = ctx.createBufferSource();
+    noise.buffer = getNoiseBuffer(ctx);
+    noise.loop = true;
+
+    const jitterFilter = ctx.createBiquadFilter();
+    jitterFilter.type = 'lowpass';
+    jitterFilter.frequency.value = opts.vibratoJitterCutoff;
+    jitterFilter.Q.value = 0.5;
+
+    const noiseGain = ctx.createGain();
+    noiseGain.gain.value = opts.vibratoJitterAmount; 
+
     const vibratoGain = ctx.createGain();
-    // Unique vibrato rate for every singer in the quartet/chorus
-    vibrato.frequency.value = 4.6 + (Math.random() * 1.2); 
-    vibratoGain.gain.value = freq * 0.006;
-    vibrato.connect(vibratoGain); vibratoGain.connect(osc.frequency);
+    vibratoGain.gain.value = freq * opts.vibratoDepth;
+
+    vibrato.connect(vibratoGain);
+    noise.connect(jitterFilter);
+    jitterFilter.connect(noiseGain);
+    noiseGain.connect(vibratoGain);
+    vibratoGain.connect(osc.frequency);
 
     const voiceGain = ctx.createGain();
     voiceGain.gain.setValueAtTime(0, startTime);
@@ -35,57 +57,56 @@ function createVoice(ctx, freq, vowel, startTime, duration, targetGain = 0.05) {
         const filter = ctx.createBiquadFilter();
         filter.type = 'bandpass';
         filter.frequency.value = f;
-        filter.Q.value = idx === 0 ? 10 : 15;
+        filter.Q.value = idx === 0 ? opts.q1 : opts.q2;
         osc.connect(filter); filter.connect(voiceGain);
     });
-    return { osc, vibrato, gain: voiceGain };
+
+    return { osc, vibrato, noise, gain: voiceGain };
 }
 
-function setupAudioGraph(ctx, chordState, vowel, startTime, duration, tuningData, numVoicesPerPart = 1, multiChannel = false) {
+function setupAudioGraph(ctx, chordState, startTime, duration, tuningData, opts, multiChannel = false) {
     let merger = null;
     if (multiChannel) {
         merger = ctx.createChannelMerger(4);
         merger.connect(ctx.destination);
     }
     
-    // Scale gain to make amplitude more consistent regardless of how many voices are layered per part
-    const individualGain = 0.05 / Math.sqrt(Math.max(1, numVoicesPerPart));
+    const individualGain = opts.volume / Math.sqrt(Math.max(1, opts.vps));
 
     chordState.forEach((note, i) => {
         const baseCents = (tuningData && tuningData[i] !== undefined) ? tuningData[i] : 0;
         
-        for (let v = 0; v < numVoicesPerPart; v++) {
-            // Independent start jitter for every voice to randomize phase
-            const phaseJitter = Math.random() * 0.08;
+        for (let v = 0; v < opts.vps; v++) {
+            const phaseJitter = Math.random() * opts.phaseJitter;
             const voiceStart = startTime + phaseJitter;
-            
-            // Subtle micro-tuning variance (±1 cent) creates a natural chorus "wash"
             const microtuning = (Math.random() - 0.5) * 2;
             const freq = 440 * Math.pow(2, (getAbsSemitone(note) - 57 + ((baseCents + microtuning) / 100)) / 12);
             
-            const voice = createVoice(ctx, freq, vowel, voiceStart, duration, individualGain);
+            const voice = createVoice(ctx, freq, voiceStart, duration, individualGain, opts);
             
             if (multiChannel) voice.gain.connect(merger, 0, i);
             else voice.gain.connect(ctx.destination);
             
             voice.osc.start(voiceStart); 
             voice.vibrato.start(voiceStart);
+            voice.noise.start(voiceStart, Math.random() * 2);
             voice.osc.stop(voiceStart + duration); 
             voice.vibrato.stop(voiceStart + duration);
+            voice.noise.stop(voiceStart + duration);
         }
     });
 }
 
-export function playChord(chordState, vowel = 'a', tuningData = null, numVoicesPerPart = 1) {
+export function playChord(chordState, tuningData, opts) {
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     if (audioCtx.state === 'suspended') audioCtx.resume();
-    setupAudioGraph(audioCtx, chordState, vowel, audioCtx.currentTime, 5.0, tuningData, numVoicesPerPart);
+    setupAudioGraph(audioCtx, chordState, audioCtx.currentTime, opts.duration, tuningData, opts);
 }
 
-export async function saveChordAsWav(chordState, vowel = 'a', tuningData = null, numVoicesPerPart = 1) {
-    const duration = 5.0, sr = 44100;
+export async function saveChordAsWav(chordState, tuningData, opts) {
+    const duration = opts.duration, sr = 44100;
     const offlineCtx = new OfflineAudioContext(4, sr * duration, sr);
-    setupAudioGraph(offlineCtx, chordState, vowel, 0, duration, tuningData, numVoicesPerPart, true);
+    setupAudioGraph(offlineCtx, chordState, 0, duration, tuningData, opts, true);
     const buffer = await offlineCtx.startRendering();
     const data = new Float32Array(buffer.length * 4);
     for (let i = 0; i < buffer.length; i++) {
@@ -94,7 +115,7 @@ export async function saveChordAsWav(chordState, vowel = 'a', tuningData = null,
     const blob = encodeWAV(data, 4, sr);
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = `chord_vlq_${numVoicesPerPart}_${vowel}.wav`;
+    link.download = `chord_custom_vlq.wav`;
     link.click();
 }
 
@@ -134,10 +155,10 @@ export function getMagnitudes(signal, sr) {
     return { freqs, mag };
 }
 
-export async function analyzeAndShow(chordState, vowel, tuningData, numVoicesPerPart = 1) {
-    const duration = 5.0, sr = 44100, N = 16384; 
+export async function analyzeAndShow(chordState, tuningData, opts) {
+    const duration = opts.duration, sr = 44100, N = 16384; 
     const offlineCtx = new OfflineAudioContext(4, sr * duration, sr);
-    setupAudioGraph(offlineCtx, chordState, vowel, 0, duration, tuningData, numVoicesPerPart, true);
+    setupAudioGraph(offlineCtx, chordState, 0, duration, tuningData, opts, true);
     const buffer = await offlineCtx.startRendering();
     
     const analysis = { freqs: [], parts: [] };
