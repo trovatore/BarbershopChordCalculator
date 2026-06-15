@@ -1,7 +1,7 @@
-/* audio.js Serial: #015 */
+/* audio.js Serial: #017 */
 import { getAbsSemitone } from './spelling.js';
 
-export const SERIAL = "#016";
+export const SERIAL = "#017";
 
 let audioCtx = null;
 let sharedNoiseBuffer = null;
@@ -22,10 +22,6 @@ function createVoice(ctx, freq, startTime, duration, targetGain, opts) {
     osc.type = 'sawtooth';
     osc.frequency.setValueAtTime(freq, startTime);
 
-    const vibrato = ctx.createOscillator();
-    // Vibrato rate uniformly jittered around mean, with range defined by user.
-    vibrato.frequency.value = opts.vibratoRateMean + ((Math.random() * 2 - 1) * opts.vibratoRateRange / 2);
-
     const noise = ctx.createBufferSource();
     noise.buffer = getNoiseBuffer(ctx);
     noise.loop = true;
@@ -37,15 +33,27 @@ function createVoice(ctx, freq, startTime, duration, targetGain, opts) {
 
     const noiseGain = ctx.createGain();
     noiseGain.gain.value = opts.vibratoJitterAmount; 
-
-    const vibratoGain = ctx.createGain();
-    vibratoGain.gain.value = freq * opts.vibratoDepth;
-
-    vibrato.connect(vibratoGain);
     noise.connect(jitterFilter);
     jitterFilter.connect(noiseGain);
-    noiseGain.connect(vibratoGain);
-    vibratoGain.connect(osc.frequency);
+    // `vibrato` oscillator will not be meaningfully used if vibratoRateMean is 0, but still needs to be defined in this scope because it is started
+    //  outside of this function.
+    const vibrato = ctx.createOscillator();
+
+    if (opts.vibratoRateMean > 0.01) {
+        // Vibrato rate uniformly jittered around mean, with range defined by user.
+        vibrato.frequency.value = opts.vibratoRateMean + ((Math.random() * 2 - 1) * opts.vibratoRateRange / 2);
+
+        const vibratoGain = ctx.createGain();
+        vibratoGain.gain.value = freq * opts.vibratoDepth;
+
+        vibrato.connect(vibratoGain);
+        noiseGain.connect(vibratoGain);
+        vibratoGain.connect(osc.frequency);
+    } else {
+        // This is an easter egg to allow users to apply FM noise to the pitch without periodic vibrato.
+        // In this case, the noise source directly jitters the pitch without going through a low-frequency vibrato oscillator.
+        noiseGain.connect(osc.frequency);
+    }
 
     const voiceGain = ctx.createGain();
     voiceGain.gain.setValueAtTime(0, startTime);
