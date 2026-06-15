@@ -57,8 +57,8 @@
         <div style="display: flex; flex-direction: column; gap: 10px;">
             <label class="checkbox-label"><input type="checkbox" id="rootlessToggle"> Analyze rootless 9ths</label>
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px;">
-                <label class="checkbox-label" style="font-size: 0.75rem;">Voices: <input type="number" id="vpsCount" value="4" min="1" max="20" style="width: 35px;"></label>
-                <label class="checkbox-label" style="font-size: 0.75rem;">Secs: <input type="number" id="duration" value="5" min="1" max="15" style="width: 35px;"></label>
+                <label class="checkbox-label" style="font-size: 0.75rem;">Voices per part: <input type="number" id="vpsCount" value="4" min="1" max="20" style="width: 35px;"></label>
+                <label class="checkbox-label" style="font-size: 0.75rem;">Duration (s): <input type="number" id="duration" value="5" min="1" max="15" style="width: 35px;"></label>
             </div>
             <label class="checkbox-label" style="font-size: 0.75rem;">Vol: <input type="range" id="volume" min="0.01" max="0.2" step="0.01" value="0.05" style="width: 80px;"></label>
             
@@ -129,7 +129,7 @@
                 <div id="v_vibratoDepth" class="val-disp">0.006</div>
             </div>
             <div>
-                <label>Vibrato Rate Mean:<br><input type="range" id="vibratoRateMean" min="2" max="10" step="0.1" value="5.2" style="width:100%"></label>
+                <label>Vibrato Rate Mean:<br><input type="range" id="vibratoRateMean" min="0" max="10" step="0.1" value="5.2" style="width:100%"></label>
                 <div id="v_vibratoRateMean" class="val-disp">5.2Hz</div>
             </div>
             <div>
@@ -169,7 +169,7 @@ import { drawChord, SERIAL as S_NOT } from '/static/js/notation.js';
 import { playChord, saveChordAsWav, analyzeAndShow, SERIAL as S_AUD } from '/static/js/audio.js';
 
 const SHOW_SERIALS = false;
-const S_IDX = "#053";
+const S_IDX = "#054";
 
 const manifestEl = document.getElementById('manifest');
 const docsLink = "<a href='/help' target='_blank'>Documentation</a>";
