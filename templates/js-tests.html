@@ -12,7 +12,7 @@
     </style>
 </head>
 <body>
-    <h1>Browser Unit Tests - Serial #042</h1>
+    <h1>Browser Unit Tests - Serial #052</h1>
     <div id="results">Running tests...</div>
     <div id="summary" class="summary"></div>
 
@@ -20,6 +20,8 @@
         import { getAbsSemitone, getVariations } from '/static/js/spelling.js';
         import { renderControls, handleGlobalKey } from '/static/js/ui-controls.js';
         import { getNoteInfo, findPeaks } from '/static/js/audio.js';
+        import { analyzeChord } from '/static/js/theory.js';
+        import { appState, syncInputsToState, syncStateToInputs, generatePermalink, loadStateFromURL, VOWEL_PRESETS } from '/static/js/state.js';
 
         const results = document.getElementById('results');
         const summary = document.getElementById('summary');
@@ -29,21 +31,16 @@
         function assert(condition, message) {
             const div = document.createElement('div');
             if (condition) {
-                div.className = 'pass';
-                div.innerText = '✓ ' + message;
-                passCount++;
+                div.className = 'pass'; div.innerText = '✓ ' + message; passCount++;
             } else {
-                div.className = 'fail';
-                div.innerText = '✕ ' + message;
-                failCount++;
+                div.className = 'fail'; div.innerText = '✕ ' + message; failCount++;
             }
             results.appendChild(div);
         }
 
         function group(name) {
             const div = document.createElement('div');
-            div.className = 'group-title';
-            div.innerText = `--- ${name} ---`;
+            div.className = 'group-title'; div.innerText = `--- ${name} ---`;
             results.appendChild(div);
         }
 
@@ -52,7 +49,6 @@
 
             group("1. Basic Semitones & Spelling");
             assert(getAbsSemitone({step: 'c', acc: 0, oct: 4}) === 48, "C4 should be 48");
-            
             const pref49 = getVariations(49, 4, []);
             assert(pref49[0].step === 'd' && pref49[0].acc === -1, "Prefer Db4 over C#4 in vacuum");
 
@@ -68,6 +64,7 @@
             const contextCrossOctaveUnison = [{step: 'd', semi: 50}];
             const variationsCrossOctaveUnison = getVariations(62, 5, contextCrossOctaveUnison);
             assert(variationsCrossOctaveUnison[0].step === 'd' && variationsCrossOctaveUnison[0].acc === 0 && variationsCrossOctaveUnison[0].oct === 5, "Cross-octave unison: Pick D5 when a D4 is present");
+
             const pref47 = getVariations(47, 3, []);
             assert(pref47[0].step === 'b' && pref47[0].acc === 0, "Preference: Natural B3 preferred over Cb4");
             
@@ -77,18 +74,13 @@
 
             group("3. UI Rendering & Field IDs");
             const testContainer = document.createElement('div');
-            // Element must be in layout for focus() to work
-            testContainer.style.position = 'absolute';
-            testContainer.style.left = '-9999px';
+            testContainer.style.position = 'absolute'; testContainer.style.left = '-9999px';
             document.body.appendChild(testContainer);
-            
             const mockChord = [
                 { part: 'Bass', step: 'g', acc: 0, oct: 3 }, { part: 'Bari', step: 'b', acc: 0, oct: 3 }, 
                 { part: 'Lead', step: 'd', acc: 0, oct: 4 }, { part: 'Tenor', step: 'f', acc: 0, oct: 4 }
             ];
-            const mockTuning = [0, 0, 0, 0];
-            renderControls(testContainer, mockChord, 0, mockTuning, () => {}, () => {}, () => {});
-            
+            renderControls(testContainer, mockChord, 0, [0,0,0,0], () => {}, () => {}, () => {});
             const noteInput0 = testContainer.querySelector('#note-input-0');
             const tuningInput0 = testContainer.querySelector('#tuning-0');
             assert(noteInput0 && tuningInput0, "UI renders predictable IDs for note and cents inputs");
@@ -96,41 +88,27 @@
             group("4. Navigation & Interaction");
             const card = testContainer.querySelector('.part-ctrl');
             card.click();
-            assert(document.activeElement.tagName !== 'INPUT', "Navigation: Card click selects part but does NOT steal focus to inputs");
+            assert(document.activeElement.tagName !== 'INPUT', "Navigation: Card click selects part but doesn't steal focus to inputs");
 
             let manualFlag = false;
-            const tuningUpdateHandler = (e) => { if (e.detail.manual) manualFlag = true; };
-            window.addEventListener('tuningUpdate', tuningUpdateHandler, {once: true});
+            window.addEventListener('tuningUpdate', (e) => { if (e.detail.manual) manualFlag = true; }, {once: true});
             tuningInput0.dispatchEvent(new Event('input', { bubbles: true }));
             assert(manualFlag === true, "Tuning input correctly flags 'manual' state to trigger Custom mode");
 
             group("5. Key Handler & Hotkeys");
-            // Note Replacement
-            handleGlobalKey({ key: 'a', preventDefault: () => {} }, 
-                { selectedIdx: 0, isTyping: false }, 
-                { navigate: () => {}, playChord: () => {}, updateNote: () => {}, renderUI: () => {} }
-            );
-            // Wait for internal setTimeout(..., 10) in ui-controls.js
+            handleGlobalKey({ key: 'a', preventDefault: () => {} }, { selectedIdx: 0, isTyping: false }, { updateNote: () => {}, navigate: () => {}, renderUI: () => {} });
             await new Promise(r => setTimeout(r, 50));
             assert(document.activeElement === noteInput0, "Hotkey [A]: Successfully focused note input");
             assert(noteInput0.value === 'A', "Hotkey [A]: Successfully replaced value");
 
-            // Tuning Replacement
             const tuningInput2 = testContainer.querySelector('#tuning-2');
-            handleGlobalKey({ key: '1', preventDefault: () => {} }, 
-                { selectedIdx: 2, isTyping: false }, 
-                { navigate: () => {}, playChord: () => {}, updateNote: () => {}, renderUI: () => {} }
-            );
+            handleGlobalKey({ key: '1', preventDefault: () => {} }, { selectedIdx: 2, isTyping: false }, { updateNote: () => {}, navigate: () => {}, renderUI: () => {} });
             await new Promise(r => setTimeout(r, 50));
             assert(document.activeElement === tuningInput2, "Hotkey [1]: Successfully focused tuning input");
             assert(tuningInput2.value === '1', "Hotkey [1]: Successfully replaced value");
 
-            // Arrow Navigation
             let navigatedIdx = null;
-            handleGlobalKey({ key: 'ArrowRight', preventDefault: () => {} }, 
-                { selectedIdx: 2, isTyping: false }, 
-                { navigate: (idx) => { navigatedIdx = idx; }, renderUI: () => {} }
-            );
+            handleGlobalKey({ key: 'ArrowRight', preventDefault: () => {} }, { selectedIdx: 2, isTyping: false }, { navigate: (idx) => { navigatedIdx = idx; }, renderUI: () => {} });
             assert(navigatedIdx === 3, "ArrowRight: Correct voice index navigation");
 
             group("6. Audio DSP & WAV Logic");
@@ -153,20 +131,98 @@
             group("7. VLQ & fmnoise Features");
             const calcGain = (vps, vol) => vol / Math.sqrt(Math.max(1, vps));
             assert(Math.abs(calcGain(1, 0.05) - 0.05) < 0.0001, "VLQ: 1 voice at vol 0.05 yields 0.05 gain");
-            assert(Math.abs(calcGain(4, 0.05) - 0.025) < 0.0001, "VLQ: 4 voices at vol 0.05 yields 0.025 gain (1/sqrt)");
-
+            assert(Math.abs(calcGain(4, 0.05) - 0.025) < 0.0001, "VLQ: 4 voices at vol 0.05 yields 0.025 gain");
             const rates = [];
-            for(let i=0; i<100; i++) rates.push(4.6 + Math.random() * 1.2);
-            assert(rates.every(r => r >= 4.6 && r <= 5.8), "fmnoise: Vibrato rates stay within randomized bounds");
+            for(let i=0; i<50; i++) rates.push(4.6 + Math.random() * 1.2);
+            assert(rates.every(r => r >= 4.6 && r <= 5.8), "fmnoise: Vibrato rates stay within bounds");
 
             group("8. Formants & Custom Vowels");
-            const VOWEL_PRESETS = { 'ə': [500, 1500, 2500], 'ɚ': [500, 1400, 1600] };
-            assert(VOWEL_PRESETS['ə'][1] === 1500, "Phonetics: Schwa [ə] F2 is 1500Hz");
-            assert(VOWEL_PRESETS['ɚ'][2] === 1600, "Phonetics: Rhotic [ɚ] F3 is dropped to 1600Hz");
+            const TEST_PRESETS = { 'ə': [500, 1500, 2500], 'ɚ': [500, 1400, 1600] };
+            assert(TEST_PRESETS['ə'][1] === 1500, "Phonetics: Schwa [ə] F2 is 1500Hz");
+            assert(TEST_PRESETS['ɚ'][2] === 1600, "Phonetics: Rhotic [ɚ] F3 is dropped to 1600Hz");
 
+            group("9. Theory Engine - Gold Standard (Ported)");
+            const majRes = analyzeChord(["C4", "E4", "G4"], { tuning_style: "just" });
+            assert(majRes.common_name === "C-major triad", "9.1 Name: C-major triad");
+            assert(majRes.inversion === "Root Position", "9.1 Inv: Root Position");
+            assert(majRes.voicing === "Closed", "9.1 Voicing: Closed");
+            assert(JSON.stringify(majRes.notes.map(n => n.tuning)) === "[0,-13.7,2]", "9.1 Just Tunings: [0, -13.7, 2.0]");
+
+            const minRes = analyzeChord(["Eb3", "G3", "C4"], { tuning_style: "just" });
+            assert(minRes.inversion === "1st Inversion", "9.2 Inv: 1st Inversion (Minor 3rd in Bass)");
+            assert(JSON.stringify(minRes.notes.map(n => n.tuning)) === "[15.6,2,0]", "9.2 Just Tunings (C root anchor)");
+
+            const domOpenRes = analyzeChord(["D3", "G3", "B3", "F4"], { tuning_style: "just" });
+            assert(domOpenRes.voicing === "Open", "9.4 Voicing: Open (> 12 semitones)");
+            assert(domOpenRes.inversion === "2nd Inversion", "9.4 Inv: 2nd Inversion (Fifth in Bass)");
+
+            const hdRes = analyzeChord(["E3", "G3", "Bb3", "D4"], { tuning_style: "just", allow_rootless: true });
+            assert(JSON.stringify(hdRes.notes.map(n => n.tuning)) === "[0,15.7,-17.5,17.6]", "9.5 Just Tunings (Rootless 9th logic)");
+
+            const borderRes = analyzeChord(["C3", "G3", "C4"]);
+            assert(borderRes.voicing === "Closed", "9.7 Voicing: Exactly 12 semitones is Closed (Even if Unknown Chord)");
+
+            group("10. System State & UI Sync");
+            testContainer.innerHTML = `
+                <input type="checkbox" id="rootlessToggle"> <input type="checkbox" id="offlineToggle">
+                <input type="number" id="vpsCount" value="4"> <input type="number" id="duration" value="5">
+                <input type="range" id="volume" value="0.15">
+                <input type="radio" name="intonation" value="just" checked> <input type="radio" name="intonation" value="equal">
+                <input type="radio" name="vowel" value="u" checked>
+                <input type="range" id="f1" value="300"><div id="v_f1"></div>
+                <input type="range" id="f2" value="870"><div id="v_f2"></div>
+                <input type="range" id="f3" value="2240"><div id="v_f3"></div>
+                <input type="range" id="vibratoJitterCutoff" value="100"><div id="v_vibratoJitterCutoff"></div>
+                <input type="range" id="vibratoJitterAmount" value="2.5"><div id="v_vibratoJitterAmount"></div>
+                <input type="range" id="phaseJitter" value="0.08"><div id="v_phaseJitter"></div>
+                <input type="range" id="vibratoDepth" value="0.006"><div id="v_vibratoDepth"></div>
+                <input type="range" id="vibratoRateMean" value="5.2"><div id="v_vibratoRateMean"></div>
+                <input type="range" id="vibratoRateRange" value="1.2"><div id="v_vibratoRateRange"></div>
+                <input type="range" id="formantQ1" value="10"><div id="v_formantQ1"></div>
+                <input type="range" id="formantQ2" value="15"><div id="v_formantQ2"></div>
+            `;
+
+            syncInputsToState();
+            assert(appState.settings.volume === 0.15, "10.1 State: Volume synced from UI slider");
+            assert(appState.settings.vowel === 'u', "10.2 State: Vowel radio synced to state");
+
+            appState.settings.audio.f1 = 440;
+            syncStateToInputs();
+            const labelF1 = document.getElementById('v_f1');
+            assert(labelF1 && labelF1.innerText === "440Hz", "10.3 UI: Slider label updated to 440Hz from State");
+
+            group("11. Permalink Roundtrip");
+            appState.chords[0].voices[0].step = 'a';
+            appState.chords[0].tuning = [1.1, 2.2, 3.3, 4.4];
+            appState.settings.intonation = 'pythagorean';
+            appState.settings.audio.f1 = 987;
+            appState.ui.offlineMode = true;
+            appState.settings.volume = 0.19;
+            
+            const shareBtn = document.createElement('button'); shareBtn.id = 'shareBtn';
+            document.body.appendChild(shareBtn);
+
+            generatePermalink();
+            // decodeURIComponent fixes encoding differences (e.g., ':' vs '%3A')
+            const search = decodeURIComponent(window.location.search);
+            assert(search.includes('n=a'), "11.1 URL contains target note");
+            assert(search.includes('f1:987'), "11.2 URL contains target audio setting");
+            assert(!search.includes('off='), "11.3 URL does not contain transient preference (offline)");
+            assert(!search.includes('0.19'), "11.4 URL does not contain transient preference (volume)");
+
+            appState.chords[0].voices[0].step = 'c';
+            appState.settings.audio.f1 = 100;
+            
+            loadStateFromURL();
+            assert(appState.chords[0].voices[0].step === 'a', "11.5 State recovered target notes");
+            assert(appState.settings.audio.f1 === 987, "11.6 State recovered target audio settings");
+            assert(appState.ui.offlineMode === true, "11.7 User pref (Offline) preserved across load");
+            assert(appState.settings.volume === 0.19, "11.8 User pref (Volume) preserved across load");
+
+            window.history.replaceState({}, '', window.location.pathname);
+            document.body.removeChild(shareBtn);
             document.body.removeChild(testContainer);
 
-            // --- Final Summary ---
             summary.innerText = `Tests: ${passCount + failCount} | Passed: ${passCount} | Failed: ${failCount}`;
             summary.style.color = failCount === 0 ? "green" : "red";
             if (failCount === 0) summary.innerText += " - ALL TESTS PASSED";

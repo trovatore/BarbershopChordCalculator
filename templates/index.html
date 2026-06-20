@@ -1,3 +1,4 @@
+<!-- index.html Serial: #62 -->
 <!DOCTYPE html>
 <html>
 <head>
@@ -56,6 +57,7 @@
     <div class="settings-grid">
         <div style="display: flex; flex-direction: column; gap: 10px;">
             <label class="checkbox-label"><input type="checkbox" id="rootlessToggle"> Analyze rootless 9ths</label>
+            <label class="checkbox-label" style="color: #28a745; font-weight: bold;"><input type="checkbox" id="offlineToggle"> Offline Mode (Local Theory)</label>
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px;">
                 <label class="checkbox-label" style="font-size: 0.75rem;">Voices per part: <input type="number" id="vpsCount" value="4" min="1" max="20" style="width: 35px;"></label>
                 <label class="checkbox-label" style="font-size: 0.75rem;">Duration (s): <input type="number" id="duration" value="5" min="1" max="15" style="width: 35px;"></label>
@@ -153,6 +155,7 @@
                 <h2 id="chordName" style="margin:0;">Analyzing...</h2>
                 <button id="playBtn" class="play-btn"><span>▶</span> Play</button>
                 <button id="saveBtn" class="save-btn"><span>💾</span> Save .wav</button>
+                <button id="shareBtn" class="save-btn" style="background: #007bff;"><span>🔗</span> Copy Link</button>
                 <button id="analyzeBtn" class="analyze-btn"><span>📊</span> Analyze</button>
             </div>
             <span id="pendingIndicator" class="pending-text" style="display:none;">(calculating...)</span>
@@ -162,224 +165,15 @@
     </div>
 </div>
 
-<script type="module">
-import { getAbsSemitone, getVariations, STR_TO_ACC, ACC_TO_STR, STEP_TO_SEMI, SERIAL as S_SPEL } from '/static/js/spelling.js';
-import { renderControls, handleGlobalKey, SERIAL as S_UI } from '/static/js/ui-controls.js';
-import { drawChord, SERIAL as S_NOT } from '/static/js/notation.js';
-import { playChord, saveChordAsWav, analyzeAndShow, SERIAL as S_AUD } from '/static/js/audio.js';
-
-const SHOW_SERIALS = false;
-const S_IDX = "#054";
-
-const manifestEl = document.getElementById('manifest');
-const docsLink = "<a href='/help' target='_blank'>Documentation</a>";
-if (SHOW_SERIALS) {
-    manifestEl.innerHTML = "index: " + S_IDX + " | " + docsLink + "<br>spel: " + S_SPEL + "<br>ui: #023<br>not: " + S_NOT + "<br>aud: " + S_AUD + "<br>test: #042";
-} else {
-    manifestEl.innerHTML = docsLink;
-}
-
-const VOWEL_PRESETS = {
-    'i': [270, 2290, 3010], 'y': [270, 1800, 2300], 'ɪ': [390, 1990, 2550],
-    'e': [390, 2300, 2850], 'ɛ': [530, 1840, 2480], 'æ': [660, 1720, 2410],
-    'a': [730, 1090, 2440], 'ə': [500, 1500, 2500], 'ʌ': [640, 1190, 2390],
-    'ɑ': [700, 1100, 2400], 'ɒ': [600, 900, 2400], 'ɔ': [570, 840, 2410],
-    'o': [460, 1100, 2490], 'ʊ': [440, 1020, 2240], 'u': [300, 870, 2240],
-    'ɚ': [500, 1400, 1600], 'ɑ˞': [700, 1100, 1600], 'ɔ˞': [570, 840, 1600]
-};
-
-let chordState = [
-    { part: 'Bass', step: 'g', acc: 0, oct: 3 },
-    { part: 'Bari', step: 'b', acc: 0, oct: 3 },
-    { part: 'Lead', step: 'd', acc: 0, oct: 4 },
-    { part: 'Tenor', step: 'f', acc: 0, oct: 4 }
-];
-let tuningState = [0, 0, 0, 0];
-let selectedIdx = 2;
-let focusedElementId = null; 
-let analysisId = 0;
-
-function getNoteString(obj) { return obj.step + ACC_TO_STR[obj.acc] + obj.oct; }
-
-function getAudioSettings() {
-    return {
-        f1: parseFloat(document.getElementById('f1').value),
-        f2: parseFloat(document.getElementById('f2').value),
-        f3: parseFloat(document.getElementById('f3').value),
-        vibratoJitterCutoff: parseFloat(document.getElementById('vibratoJitterCutoff').value),
-        vibratoJitterAmount: parseFloat(document.getElementById('vibratoJitterAmount').value),
-        phaseJitter: parseFloat(document.getElementById('phaseJitter').value),
-        vibratoDepth: parseFloat(document.getElementById('vibratoDepth').value),
-        vibratoRateMean: parseFloat(document.getElementById('vibratoRateMean').value),
-        vibratoRateRange: parseFloat(document.getElementById('vibratoRateRange').value),
-        q1: parseFloat(document.getElementById('formantQ1').value),
-        q2: parseFloat(document.getElementById('formantQ2').value),
-        vps: parseInt(document.getElementById('vpsCount').value),
-        duration: parseFloat(document.getElementById('duration').value),
-        volume: parseFloat(document.getElementById('volume').value)
-    };
-}
-
-// Logic for Vowel Selection vs Custom Sliders
-document.querySelectorAll('input[name="vowel"]').forEach(radio => {
-    radio.onchange = () => {
-        if (radio.value === 'custom') {
-            document.getElementById('advDetails').open = true;
-        } else {
-            const freqs = VOWEL_PRESETS[radio.value];
-            if (freqs) {
-                ['f1', 'f2', 'f3'].forEach((id, idx) => {
-                    const slider = document.getElementById(id);
-                    slider.value = freqs[idx];
-                    document.getElementById('v_' + id).innerText = freqs[idx] + "Hz";
-                });
-            }
-        }
-    }
-});
-
-['f1', 'f2', 'f3'].forEach(id => {
-    document.getElementById(id).oninput = (e) => {
-        document.getElementById('v_' + id).innerText = e.target.value + "Hz";
-        document.querySelector('input[name="vowel"][value="custom"]').checked = true;
-    };
-});
-
-// Generic slider update for other advanced settings
-['vibratoJitterCutoff', 'vibratoJitterAmount', 'vibratoDepth', 'vibratoRateMean', 'vibratoRateRange', 'phaseJitter', 'formantQ1', 'formantQ2'].forEach(id => {
-    const el = document.getElementById(id);
-    el.oninput = () => { 
-        let suffix = "";
-        if (id.includes('Rate') || id.includes('Cutoff')) suffix = "Hz";
-        else if (id === 'phaseJitter') suffix = "s";
-        document.getElementById('v_' + id).innerText = el.value + suffix; 
-    };
-});
-
-function updateNote(idx, semiChange) {
-    const context = chordState.map((s, i) => ({ step: s.step, semi: getAbsSemitone(s), idx: i })).filter(n => n.idx !== idx);
-    chordState[idx] = Object.assign({}, chordState[idx], getVariations(getAbsSemitone(chordState[idx]) + semiChange, chordState[idx].oct, context)[0]);
-    renderMutation();
-}
-
-function manualUpdate(idx, val) {
-    const match = val.match(/^([a-gA-G])(bb|b|#|x)?([0-8])$/i);
-    if (match) {
-        const step = match[1].toLowerCase();
-        const acc = STR_TO_ACC[match[2] ? match[2].toLowerCase() : ""];
-        const oct = parseInt(match[3]);
-        const context = chordState.map((s, i) => ({ step: s.step, semi: getAbsSemitone(s), idx: i })).filter(n => n.idx !== idx);
-        chordState[idx] = Object.assign({}, chordState[idx], getVariations((oct * 12) + STEP_TO_SEMI[step] + acc, chordState[idx].oct, context)[0]);
-        renderMutation();
-    }
-}
-
-function cycleEnharmonic(idx) {
-    const vars = getVariations(getAbsSemitone(chordState[idx]), chordState[idx].oct, chordState.map((s, i) => ({ step: s.step, semi: getAbsSemitone(s), idx: i })).filter(n => n.idx !== idx));
-    let curIdx = vars.findIndex(v => v.step === chordState[idx].step && v.acc === chordState[idx].acc && v.oct === chordState[idx].oct);
-    chordState[idx] = Object.assign({}, chordState[idx], vars[(curIdx + 1) % vars.length]);
-    renderMutation();
-}
-
-async function fetchAnalysis() {
-    const currentId = ++analysisId;
-    const allowRootless = document.getElementById('rootlessToggle').checked;
-    const tuningStyle = document.querySelector('input[name="intonation"]:checked').value;
-    
-    document.getElementById('analysis-result').classList.add('pending');
-    document.getElementById('pendingIndicator').style.display = 'inline';
-
-    try {
-        const res = await fetch('/analyze', { 
-            method: 'POST', headers: {'Content-Type': 'application/json'}, 
-            body: JSON.stringify({ notes: chordState.map(s => getNoteString(s)), allow_rootless: allowRootless, tuning_style: tuningStyle }) 
+<script type="module" src="/static/js/main.js"></script>
+<script>
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('/static/sw.js').then(reg => {
+                console.log('SW Registered');
+            }).catch(err => console.log('SW Registration failed', err));
         });
-        const data = await res.json();
-        if (currentId === analysisId && !data.error) {
-            document.getElementById('chordName').innerText = data.common_name || "Unknown Chord";
-            document.getElementById('meta').innerText = (data.inversion + " - " + data.voicing).toUpperCase();
-            document.getElementById('roles').innerHTML = (data.notes || []).map(n => "<div>" + n.part + ": <strong>" + n.role + "</strong></div>").join('');
-            if (tuningStyle !== 'custom') {
-                tuningState = data.notes.map(n => n.tuning);
-            }
-            renderUI(); 
-        }
-    } catch (e) { console.error(e); }
-    finally {
-        if (currentId === analysisId) {
-            document.getElementById('analysis-result').classList.remove('pending');
-            document.getElementById('pendingIndicator').style.display = 'none';
-        }
     }
-}
-
-function renderUI() {
-    renderControls(document.querySelector('.controls'), chordState, selectedIdx, tuningState, manualUpdate, updateNote, cycleEnharmonic);
-    drawChord("notation", chordState);
-    if (focusedElementId) {
-        const el = document.getElementById(focusedElementId);
-        if (el) el.focus();
-    }
-}
-
-function renderMutation() {
-    renderUI();
-    fetchAnalysis();
-}
-
-window.addEventListener('selectPart', (e) => {
-    selectedIdx = e.detail;
-    focusedElementId = null;
-    renderUI();
-});
-
-window.addEventListener('inputFocus', (e) => {
-    selectedIdx = e.detail.idx;
-    focusedElementId = e.detail.id;
-    document.querySelectorAll('.part-ctrl').forEach((c, i) => c.classList.toggle('active', i === selectedIdx));
-});
-
-window.addEventListener('tuningUpdate', (e) => {
-    const val = parseFloat(e.detail.val);
-    tuningState[e.detail.idx] = isNaN(val) ? e.detail.val : val;
-    if (e.detail.manual) {
-        document.querySelector('input[name="intonation"][value="custom"]').checked = true;
-    }
-});
-
-document.getElementById('playBtn').onclick = () => playChord(chordState, tuningState, getAudioSettings());
-document.getElementById('saveBtn').onclick = () => saveChordAsWav(chordState, tuningState, getAudioSettings());
-document.getElementById('analyzeBtn').onclick = async () => {
-    const btn = document.getElementById('analyzeBtn');
-    btn.disabled = true;
-    setTimeout(async () => {
-        try { await analyzeAndShow(chordState, tuningState, getAudioSettings()); }
-        finally { btn.disabled = false; }
-    }, 50);
-};
-
-document.getElementById('rootlessToggle').onchange = () => fetchAnalysis();
-document.querySelectorAll('input[name="intonation"]').forEach(r => r.onchange = () => fetchAnalysis());
-
-window.addEventListener('keydown', (e) => {
-    handleGlobalKey(e, 
-        { selectedIdx, isTyping: document.activeElement.tagName === 'INPUT' },
-        {
-            updateNote,
-            cycleEnharmonic,
-            renderUI,
-            playChord: () => document.getElementById('playBtn').click(),
-            navigate: (idx) => {
-                selectedIdx = idx;
-                focusedElementId = null;
-                renderUI();
-            }
-        }
-    );
-});
-
-renderUI();
-fetchAnalysis();
 </script>
 </body>
 </html>
