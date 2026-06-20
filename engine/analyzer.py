@@ -121,6 +121,8 @@ class ChordAnalyzer:
             "Major 7th": 9.8,
         }
 
+        # For custom or unknown styles, we provide just_offsets as a baseline
+        # calculation, although the frontend typically manages 'custom' overrides.
         offsets = pyth_offsets if style == "pythagorean" else just_offsets
         raw_adjs: List[float] = []
         root_adj_value = 0.0

@@ -1,7 +1,7 @@
-/* audio.js Serial: #017 */
+/* audio.js Serial: #019 */
 import { getAbsSemitone } from './spelling.js';
 
-export const SERIAL = "#017";
+export const SERIAL = "#019";
 
 let audioCtx = null;
 let sharedNoiseBuffer = null;

@@ -1,6 +1,6 @@
-/* ui-controls.js Serial: #023 */
+/* ui-controls.js Serial: #025 */
 import { ACC_TO_STR } from './spelling.js';
-export const SERIAL = "#023";
+export const SERIAL = "#025";
 
 /**
  * Renders the four voice control cards.
