@@ -12,6 +12,7 @@ const SHOW_SERIALS = false;
 function getAudioSettings() {
     return {
         ...appState.settings.audio,
+        partSettings: appState.settings.partSettings,
         vps: appState.settings.vps,
         duration: appState.settings.duration,
         volume: appState.settings.volume
@@ -131,6 +132,8 @@ function init() {
 
     document.getElementById('rootlessToggle').onchange = triggerMutation;
     document.getElementById('offlineToggle').onchange = triggerMutation;
+    document.getElementById('vpsCount').oninput = triggerMutation;
+    document.getElementById('duration').oninput = triggerMutation;
     document.getElementById('volume').oninput = triggerMutation;
     document.querySelectorAll('input[name="intonation"]').forEach(r => r.onchange = triggerMutation);
     
@@ -166,6 +169,21 @@ function init() {
             };
         }
     });
+
+    // Part-specific formants listeners
+    for (let i = 0; i < 4; i++) {
+        ['gain', 'f4', 'f5'].forEach(key => {
+            const el = document.getElementById(`part-${key}-${i}`);
+            if (el) {
+                el.oninput = () => {
+                    syncInputsToState();
+                    syncStateToInputs(); // This updates the v_part... divs
+                    // We call fetchAnalysis but skip it if in offline mode for speed
+                    if (!appState.ui.offlineMode) fetchAnalysis();
+                };
+            }
+        });
+    }
 
     document.getElementById('playBtn').onclick = () => playChord(appState.chords[appState.activeChordIndex].voices, appState.chords[appState.activeChordIndex].tuning, getAudioSettings());
     document.getElementById('saveBtn').onclick = () => saveChordAsWav(appState.chords[appState.activeChordIndex].voices, appState.chords[appState.activeChordIndex].tuning, getAudioSettings());

@@ -53,7 +53,13 @@ export const appState = {
             phaseJitter: 0.08, vibratoDepth: 0.006,
             vibratoRateMean: 5.2, vibratoRateRange: 1.2,
             q1: 10, q2: 15
-        }
+        },
+        partSettings: [
+            { name: 'Bass', f4: 3500, f5: 4500, gain: 0.0 },
+            { name: 'Bari', f4: 3500, f5: 4500, gain: 0.0 },
+            { name: 'Lead', f4: 3500, f5: 4500, gain: 0.0 },
+            { name: 'Tenor', f4: 3500, f5: 4500, gain: 0.0 }
+        ]
     }
 };
 
@@ -85,6 +91,15 @@ export function syncInputsToState() {
         const id = (key === 'q1') ? 'formantQ1' : (key === 'q2' ? 'formantQ2' : key);
         const el = document.getElementById(id);
         if (el) appState.settings.audio[key] = parseFloat(el.value);
+    });
+
+    appState.settings.partSettings.forEach((part, i) => {
+        const gainEl = document.getElementById(`part-gain-${i}`);
+        if (gainEl) part.gain = parseFloat(gainEl.value);
+        const f4El = document.getElementById(`part-f4-${i}`);
+        if (f4El) part.f4 = parseFloat(f4El.value);
+        const f5El = document.getElementById(`part-f5-${i}`);
+        if (f5El) part.f5 = parseFloat(f5El.value);
     });
 }
 
@@ -118,9 +133,32 @@ export function syncStateToInputs() {
             el.value = currentVal;
             const disp = document.getElementById('v_' + id);
             if (disp) {
-                let suffix = (id.includes('Rate') || id.includes('Cutoff') || id.startsWith('f')) ? "Hz" : (id === 'phaseJitter' ? "s" : "");
+                let suffix = (id.includes('Rate') || id.includes('Cutoff') || (id.startsWith('f') && !id.includes('Q'))) ? "Hz" : (id === 'phaseJitter' ? "s" : "");
                 disp.innerText = currentVal + suffix;
             }
+        }
+    });
+
+    appState.settings.partSettings.forEach((part, i) => {
+        const gainEl = document.getElementById(`part-gain-${i}`);
+        if (gainEl) {
+            gainEl.value = part.gain;
+            const disp = document.getElementById(`v_part-gain-${i}`);
+            if (disp) disp.innerText = part.gain.toFixed(2);
+        }
+        
+        const f4El = document.getElementById(`part-f4-${i}`);
+        if (f4El) {
+            f4El.value = part.f4;
+            const disp = document.getElementById(`v_part-f4-${i}`);
+            if (disp) disp.innerText = part.f4 + "Hz";
+        }
+        
+        const f5El = document.getElementById(`part-f5-${i}`);
+        if (f5El) {
+            f5El.value = part.f5;
+            const disp = document.getElementById(`v_part-f5-${i}`);
+            if (disp) disp.innerText = part.f5 + "Hz";
         }
     });
 }
@@ -159,6 +197,18 @@ export function loadStateFromURL() {
             if (stateKey) appState.settings.audio[stateKey] = parseFloat(val);
         });
     }
+
+    if (params.has('ps')) {
+        params.get('ps').split('|').forEach((pStr, i) => {
+            if (i < 4) {
+                const [g, f4, f5] = pStr.split(',').map(parseFloat);
+                const part = appState.settings.partSettings[i];
+                if (!isNaN(g)) part.gain = g;
+                if (!isNaN(f4)) part.f4 = f4;
+                if (!isNaN(f5)) part.f5 = f5;
+            }
+        });
+    }
     
     syncStateToInputs();
 }
@@ -177,6 +227,11 @@ export function generatePermalink() {
         .map(([code, key]) => `${code}:${appState.settings.audio[key]}`)
         .join(',');
     p.set('a', packed);
+
+    const psPacked = appState.settings.partSettings.map(ps => 
+        `${ps.gain},${ps.f4},${ps.f5}`
+    ).join('|');
+    p.set('ps', psPacked);
     
     const newUrl = window.location.pathname + '?' + p.toString();
     window.history.replaceState({}, '', newUrl);

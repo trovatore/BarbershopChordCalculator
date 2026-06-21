@@ -18,6 +18,10 @@ function getNoiseBuffer(ctx) {
 function createVoice(ctx, freq, startTime, duration, targetGain, opts) {
     const attack = 0.15, release = 0.5;
     const formants = [opts.f1, opts.f2, opts.f3];
+    // Always add F4/F5, the gain value in opts will determine if they are audible
+    formants.push(opts.f4);
+    formants.push(opts.f5);
+
     const osc = ctx.createOscillator();
     osc.type = 'sawtooth';
     osc.frequency.setValueAtTime(freq, startTime);
@@ -65,8 +69,17 @@ function createVoice(ctx, freq, startTime, duration, targetGain, opts) {
         const filter = ctx.createBiquadFilter();
         filter.type = 'bandpass';
         filter.frequency.value = f;
-        filter.Q.value = idx === 0 ? opts.q1 : opts.q2;
-        osc.connect(filter); filter.connect(voiceGain);
+        
+        // F4/F5 (idx 3, 4) use a slightly wider Q for a smoother, less piercing ring
+        filter.Q.value = idx === 0 ? opts.q1 : (idx > 2 ? opts.q2 / 2 : opts.q2);
+        
+        const fGain = ctx.createGain();
+        // Attenuate F4/F5 based on part-specific gain setting
+        fGain.gain.value = idx === 3 ? (opts.f4Gain ?? 0) : (idx === 4 ? (opts.f5Gain ?? 0) : 1.0);
+
+        osc.connect(filter); 
+        filter.connect(fGain);
+        fGain.connect(voiceGain);
     });
 
     return { osc, vibrato, noise, gain: voiceGain };
@@ -90,7 +103,16 @@ function setupAudioGraph(ctx, chordState, startTime, duration, tuningData, opts,
             const microtuning = (Math.random() - 0.5) * 2;
             const freq = 440 * Math.pow(2, (getAbsSemitone(note) - 57 + ((baseCents + microtuning) / 100)) / 12);
             
-            const voice = createVoice(ctx, freq, voiceStart, duration, individualGain, opts);
+            const partSpec = opts.partSettings ? opts.partSettings[i] : null;
+            const voiceOpts = {
+                ...opts,
+                f4: partSpec?.f4,
+                f5: partSpec?.f5,
+                f4Gain: partSpec?.gain,
+                f5Gain: partSpec?.gain
+            };
+
+            const voice = createVoice(ctx, freq, voiceStart, duration, individualGain, voiceOpts);
             
             if (multiChannel) voice.gain.connect(merger, 0, i);
             else voice.gain.connect(ctx.destination);
@@ -164,9 +186,12 @@ export function getMagnitudes(signal, sr) {
 }
 
 export async function analyzeAndShow(chordState, tuningData, opts) {
-    const duration = opts.duration, sr = 44100, N = 16384; 
-    const offlineCtx = new OfflineAudioContext(4, sr * duration, sr);
-    setupAudioGraph(offlineCtx, chordState, 0, duration, tuningData, opts, true);
+    // For spectral analysis, we only need a small slice of audio.
+    // We render 3 seconds instead of the full duration to keep it fast.
+    const renderDuration = Math.min(opts.duration, 3);
+    const sr = 44100, N = 16384; 
+    const offlineCtx = new OfflineAudioContext(4, sr * renderDuration, sr);
+    setupAudioGraph(offlineCtx, chordState, 0, renderDuration, tuningData, opts, true);
     const buffer = await offlineCtx.startRendering();
     
     const analysis = { freqs: [], parts: [] };
