@@ -3,6 +3,7 @@ const CACHE_NAME = 'barbershop-calculator-v1';
 const ASSETS = [
   '/',
   '/help',
+  '/analysis',
   '/static/js/main.js',
   '/static/js/state.js',
   '/static/js/theory.js',
@@ -10,7 +11,8 @@ const ASSETS = [
   '/static/js/notation.js',
   '/static/js/spelling.js',
   '/static/js/ui-controls.js',
-  'https://cdn.jsdelivr.net/npm/vexflow@4.2.2/build/cjs/vexflow.js'
+  'https://cdn.jsdelivr.net/npm/vexflow@4.2.2/build/cjs/vexflow.js',
+  'https://cdn.jsdelivr.net/npm/chart.js'
 ];
 
 self.addEventListener('install', (event) => {
