@@ -60,6 +60,11 @@ def spectral_analysis() -> str:
     return render_template("analysis.html")
 
 
+@app.route("/sw.js")
+def serve_sw() -> Response:
+    return send_from_directory("static/js", "sw.js", mimetype="application/javascript")
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5001))
     app.run(host="0.0.0.0", port=port)
