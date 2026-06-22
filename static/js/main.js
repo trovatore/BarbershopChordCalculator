@@ -84,7 +84,7 @@ function renderUI() {
     }
 
     const manifestEl = document.getElementById('manifest');
-    const docsLink = "<a href='/help' target='_blank'>Documentation</a>";
+    const docsLink = "<a href='/help' target='_blank'>Documentation (not up to date)</a>";
     if (SHOW_SERIALS) {
         manifestEl.innerHTML = `index: ${S_IDX} | ${docsLink}<br>spel: ${S_SPEL} | ui: ${S_UI} | not: ${S_NOT} | aud: ${S_AUD} | thy: ${S_THY}`;
     } else {
