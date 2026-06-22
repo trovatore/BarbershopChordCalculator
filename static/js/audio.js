@@ -94,9 +94,16 @@ function setupAudioGraph(ctx, chordState, startTime, duration, tuningData, opts,
     
     const individualGain = opts.volume / Math.sqrt(Math.max(1, opts.vps));
 
+    const compressor = ctx.createDynamicsCompressor();
+    compressor.threshold.setValueAtTime(-10, ctx.currentTime);
+    compressor.knee.setValueAtTime(40, ctx.currentTime);
+    compressor.ratio.setValueAtTime(12, ctx.currentTime);
+    compressor.attack.setValueAtTime(0, ctx.currentTime);
+    compressor.release.setValueAtTime(0.25, ctx.currentTime);
+
     chordState.forEach((note, i) => {
         const baseCents = (tuningData && tuningData[i] !== undefined) ? tuningData[i] : 0;
-        
+
         for (let v = 0; v < opts.vps; v++) {
             const phaseJitter = Math.random() * opts.phaseJitter;
             const voiceStart = startTime + phaseJitter;
@@ -115,7 +122,7 @@ function setupAudioGraph(ctx, chordState, startTime, duration, tuningData, opts,
             const voice = createVoice(ctx, freq, voiceStart, duration, individualGain, voiceOpts);
             
             if (multiChannel) voice.gain.connect(merger, 0, i);
-            else voice.gain.connect(ctx.destination);
+            else voice.gain.connect(compressor);
             
             voice.osc.start(voiceStart); 
             voice.vibrato.start(voiceStart);
@@ -125,6 +132,7 @@ function setupAudioGraph(ctx, chordState, startTime, duration, tuningData, opts,
             voice.noise.stop(voiceStart + duration);
         }
     });
+    compressor.connect(ctx.destination);
 }
 
 export function playChord(chordState, tuningData, opts) {
