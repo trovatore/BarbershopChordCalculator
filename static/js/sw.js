@@ -1,5 +1,5 @@
-/* Service Worker for Offline Mode Serial: #001 */
-const CACHE_NAME = 'barbershop-calculator-v1';
+/* Service Worker for Offline Mode Serial: #002 */
+const CACHE_NAME = 'barbershop-calculator-v2';
 const ASSETS = [
   '/',
   '/help',
@@ -27,25 +27,18 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  // Only handle GET requests for caching
   if (event.request.method !== 'GET') return;
 
+  // Network First strategy for HTML/JS to ensure UI updates are seen immediately
   event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      if (cachedResponse) return cachedResponse;
-      return fetch(event.request).then((response) => {
-        // Optional: Cache new successful requests on the fly
+    fetch(event.request)
+      .then((response) => {
         if (response.status === 200) {
           const responseClone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, responseClone);
-          });
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseClone));
         }
         return response;
-      });
-    }).catch(() => {
-      // Fallback if both cache and network fail
-      return new Response("Offline content not available");
-    })
+      })
+      .catch(() => caches.match(event.request)) // Fallback to cache if offline
   );
 });

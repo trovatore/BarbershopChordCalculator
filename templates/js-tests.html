@@ -182,6 +182,7 @@
                 <input type="range" id="formantQ2" value="15"><div id="v_formantQ2"></div>
                 <!-- Part-specific mocks -->
                 <input type="range" id="part-gain-0" value="0.25"><div id="v_part-gain-0"></div>
+                <input type="range" id="part-tilt-0" value="0.5"><div id="v_part-tilt-0"></div>
                 <input type="range" id="part-f4-0" value="3000"><div id="v_part-f4-0"></div>
                 <input type="range" id="part-f5-0" value="5000"><div id="v_part-f5-0"></div>
             `;
@@ -190,6 +191,7 @@
             assert(appState.settings.volume === 0.15, "10.1 State: Volume synced from UI slider");
             assert(appState.settings.vowel === 'u', "10.2 State: Vowel radio synced to state");
             assert(appState.settings.partSettings[0].gain === 0.25, "10.2.1 State: Part gain synced");
+            assert(appState.settings.partSettings[0].tilt === 0.5, "10.2.2 State: Part tilt synced");
 
             appState.settings.audio.f1 = 440;
             syncStateToInputs();

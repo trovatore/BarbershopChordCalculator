@@ -22,6 +22,9 @@ const AUDIO_MAP = {
     'q2': 'q2'
 };
 
+// Map part properties to short codes for extensible URL packing
+const PART_PROPS = { 'g': 'gain', 't': 'tilt', '4': 'f4', '5': 'f5' };
+
 export const appState = {
     chords: [{
         voices: [
@@ -55,10 +58,10 @@ export const appState = {
             q1: 10, q2: 15
         },
         partSettings: [
-            { name: 'Bass', f4: 3500, f5: 4500, gain: 0.0 },
-            { name: 'Bari', f4: 3500, f5: 4500, gain: 0.0 },
-            { name: 'Lead', f4: 3500, f5: 4500, gain: 0.0 },
-            { name: 'Tenor', f4: 3500, f5: 4500, gain: 0.0 }
+            { name: 'Bass', f4: 3500, f5: 4500, gain: 0.0, tilt: 0.0 },
+            { name: 'Bari', f4: 3500, f5: 4500, gain: 0.0, tilt: 0.0 },
+            { name: 'Lead', f4: 3500, f5: 4500, gain: 0.0, tilt: 0.0 },
+            { name: 'Tenor', f4: 3500, f5: 4500, gain: 0.0, tilt: 0.0 }
         ]
     }
 };
@@ -96,6 +99,8 @@ export function syncInputsToState() {
     appState.settings.partSettings.forEach((part, i) => {
         const gainEl = document.getElementById(`part-gain-${i}`);
         if (gainEl) part.gain = parseFloat(gainEl.value);
+        const tiltEl = document.getElementById(`part-tilt-${i}`);
+        if (tiltEl) part.tilt = parseFloat(tiltEl.value);
         const f4El = document.getElementById(`part-f4-${i}`);
         if (f4El) part.f4 = parseFloat(f4El.value);
         const f5El = document.getElementById(`part-f5-${i}`);
@@ -146,6 +151,13 @@ export function syncStateToInputs() {
             const disp = document.getElementById(`v_part-gain-${i}`);
             if (disp) disp.innerText = part.gain.toFixed(2);
         }
+
+        const tiltEl = document.getElementById(`part-tilt-${i}`);
+        if (tiltEl) {
+            tiltEl.value = part.tilt;
+            const disp = document.getElementById(`v_part-tilt-${i}`);
+            if (disp) disp.innerText = part.tilt.toFixed(2);
+        }
         
         const f4El = document.getElementById(`part-f4-${i}`);
         if (f4El) {
@@ -193,19 +205,15 @@ export function loadStateFromURL() {
     if (params.has('a')) {
         params.get('a').split(',').forEach(pair => {
             const [code, val] = pair.split(':');
-            const stateKey = AUDIO_MAP[code];
-            if (stateKey) appState.settings.audio[stateKey] = parseFloat(val);
-        });
-    }
+            const num = parseFloat(val);
+            if (isNaN(num)) return;
 
-    if (params.has('ps')) {
-        params.get('ps').split('|').forEach((pStr, i) => {
-            if (i < 4) {
-                const [g, f4, f5] = pStr.split(',').map(parseFloat);
-                const part = appState.settings.partSettings[i];
-                if (!isNaN(g)) part.gain = g;
-                if (!isNaN(f4)) part.f4 = f4;
-                if (!isNaN(f5)) part.f5 = f5;
+            if (AUDIO_MAP[code]) {
+                appState.settings.audio[AUDIO_MAP[code]] = num;
+            } else if (code.startsWith('p')) {
+                const pIdx = parseInt(code[1]);
+                const pProp = PART_PROPS[code[2]];
+                if (pIdx < 4 && pProp) appState.settings.partSettings[pIdx][pProp] = num;
             }
         });
     }
@@ -224,14 +232,15 @@ export function generatePermalink() {
     p.set('vps', appState.settings.vps);
     
     const packed = Object.entries(AUDIO_MAP)
-        .map(([code, key]) => `${code}:${appState.settings.audio[key]}`)
-        .join(',');
-    p.set('a', packed);
+        .map(([code, key]) => `${code}:${appState.settings.audio[key]}`);
 
-    const psPacked = appState.settings.partSettings.map(ps => 
-        `${ps.gain},${ps.f4},${ps.f5}`
-    ).join('|');
-    p.set('ps', psPacked);
+    appState.settings.partSettings.forEach((ps, i) => {
+        Object.entries(PART_PROPS).forEach(([code, key]) => {
+            packed.push(`p${i}${code}:${ps[key]}`);
+        });
+    });
+
+    p.set('a', packed.join(','));
     
     const newUrl = window.location.pathname + '?' + p.toString();
     window.history.replaceState({}, '', newUrl);
