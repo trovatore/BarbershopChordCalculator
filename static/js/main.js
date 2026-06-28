@@ -1,4 +1,4 @@
-/* main.js Serial: #007 */
+/* main.js Serial: #065-PING */
 import { getAbsSemitone, getVariations, STR_TO_ACC, STEP_TO_SEMI, SERIAL as S_SPEL } from './spelling.js';
 import { renderControls, handleGlobalKey, SERIAL as S_UI } from './ui-controls.js';
 import { drawChord, SERIAL as S_NOT } from './notation.js';
@@ -6,7 +6,7 @@ import { playChord, saveChordAsWav, analyzeAndShow, SERIAL as S_AUD } from './au
 import { analyzeChord, SERIAL as S_THY } from './theory.js';
 import { appState, syncInputsToState, syncStateToInputs, loadStateFromURL, generatePermalink, getNoteString, VOWEL_PRESETS } from './state.js';
 
-const S_IDX = "#062";
+const S_IDX = "#065-PING";
 const SHOW_SERIALS = false;
 
 function getAudioSettings() {
@@ -84,7 +84,7 @@ function renderUI() {
     }
 
     const manifestEl = document.getElementById('manifest');
-    const docsLink = "<a href='/help' target='_blank'>Documentation (not up to date)</a>";
+    const docsLink = "<a href='/help' target='_blank'>Documentation</a>";
     if (SHOW_SERIALS) {
         manifestEl.innerHTML = `index: ${S_IDX} | ${docsLink}<br>spel: ${S_SPEL} | ui: ${S_UI} | not: ${S_NOT} | aud: ${S_AUD} | thy: ${S_THY}`;
     } else {
@@ -160,26 +160,27 @@ function init() {
         const el = document.getElementById(id);
         if (el) {
             el.oninput = () => {
-                if (id.startsWith('f')) {
+                if (id.startsWith('f') && !id.includes('Q')) {
                     const customRad = document.querySelector('input[name="vowel"][value="custom"]');
                     if (customRad) customRad.checked = true;
                     appState.settings.vowel = 'custom';
                 }
-                triggerMutation();
+                syncInputsToState();
+                syncStateToInputs();
+                // Audio settings don't change theory, so we skip fetchAnalysis() to prevent UI jumps
             };
         }
     });
 
     // Part-specific formants listeners
     for (let i = 0; i < 4; i++) {
-        ['gain', 'f4', 'f5'].forEach(key => {
+        ['ping', 'tilt', 'f4', 'f5'].forEach(key => {
             const el = document.getElementById(`part-${key}-${i}`);
             if (el) {
                 el.oninput = () => {
                     syncInputsToState();
-                    syncStateToInputs(); // This updates the v_part... divs
-                    // We call fetchAnalysis but skip it if in offline mode for speed
-                    if (!appState.ui.offlineMode) fetchAnalysis();
+                    syncStateToInputs();
+                    // Audio settings don't change theory, so we skip fetchAnalysis()
                 };
             }
         });

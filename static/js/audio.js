@@ -1,7 +1,7 @@
-/* audio.js Serial: #019 */
+/* audio.js Serial: #020 */
 import { getAbsSemitone } from './spelling.js';
 
-export const SERIAL = "#019";
+export const SERIAL = "#020";
 
 let audioCtx = null;
 let sharedNoiseBuffer = null;
@@ -17,14 +17,25 @@ function getNoiseBuffer(ctx) {
 
 function createVoice(ctx, freq, startTime, duration, targetGain, opts) {
     const attack = 0.15, release = 0.5;
-    const formants = [opts.f1, opts.f2, opts.f3];
-    // Always add F4/F5, the gain value in opts will determine if they are audible
-    formants.push(opts.f4);
-    formants.push(opts.f5);
+    // Defensive coding: ensure all formants have numeric fallbacks to prevent crash
+    const formants = [
+        opts.f1 || 500, 
+        opts.f2 || 1500, 
+        opts.f3 || 2500, 
+        opts.f4 || 3500, 
+        opts.f5 || 4500
+    ];
 
     const osc = ctx.createOscillator();
     osc.type = 'sawtooth';
     osc.frequency.setValueAtTime(freq, startTime);
+
+    // Register Tilt: highshelf filter to dampen buzz (Chest vs Falsetto)
+    const tiltFilter = ctx.createBiquadFilter();
+    tiltFilter.type = 'highshelf';
+    tiltFilter.frequency.setValueAtTime(1000, startTime);
+    tiltFilter.gain.setValueAtTime((opts.tilt ?? 0) * -20, startTime);
+    osc.connect(tiltFilter);
 
     const noise = ctx.createBufferSource();
     noise.buffer = getNoiseBuffer(ctx);
@@ -69,15 +80,14 @@ function createVoice(ctx, freq, startTime, duration, targetGain, opts) {
         const filter = ctx.createBiquadFilter();
         filter.type = 'bandpass';
         filter.frequency.value = f;
-        
-        // F4/F5 (idx 3, 4) use a slightly wider Q for a smoother, less piercing ring
         filter.Q.value = idx === 0 ? opts.q1 : (idx > 2 ? opts.q2 / 2 : opts.q2);
         
         const fGain = ctx.createGain();
-        // Attenuate F4/F5 based on part-specific gain setting
-        fGain.gain.value = idx === 3 ? (opts.f4Gain ?? 0) : (idx === 4 ? (opts.f5Gain ?? 0) : 1.0);
+        const baseGain = idx === 3 ? (opts.f4Gain ?? 0) : (idx === 4 ? (opts.f5Gain ?? 0) : 1.0);
+        // Subtle volume boost to compensate for energy loss when tilting
+        fGain.gain.value = baseGain * (1.0 + (opts.tilt ?? 0) * 0.5);
 
-        osc.connect(filter); 
+        tiltFilter.connect(filter);
         filter.connect(fGain);
         fGain.connect(voiceGain);
     });
@@ -92,8 +102,6 @@ function setupAudioGraph(ctx, chordState, startTime, duration, tuningData, opts,
         merger.connect(ctx.destination);
     }
     
-    const individualGain = opts.volume / Math.sqrt(Math.max(1, opts.vps));
-
     const compressor = ctx.createDynamicsCompressor();
     compressor.threshold.setValueAtTime(-10, ctx.currentTime);
     compressor.knee.setValueAtTime(40, ctx.currentTime);
@@ -101,9 +109,11 @@ function setupAudioGraph(ctx, chordState, startTime, duration, tuningData, opts,
     compressor.attack.setValueAtTime(0, ctx.currentTime);
     compressor.release.setValueAtTime(0.25, ctx.currentTime);
 
+    const individualGain = opts.volume / Math.sqrt(Math.max(1, opts.vps));
+
     chordState.forEach((note, i) => {
         const baseCents = (tuningData && tuningData[i] !== undefined) ? tuningData[i] : 0;
-
+        
         for (let v = 0; v < opts.vps; v++) {
             const phaseJitter = Math.random() * opts.phaseJitter;
             const voiceStart = startTime + phaseJitter;
@@ -115,10 +125,11 @@ function setupAudioGraph(ctx, chordState, startTime, duration, tuningData, opts,
                 ...opts,
                 f4: partSpec?.f4,
                 f5: partSpec?.f5,
-                f4Gain: partSpec?.gain,
-                f5Gain: partSpec?.gain
+                f4Gain: partSpec?.ping,
+                f5Gain: partSpec?.ping,
+                tilt: partSpec?.tilt
             };
-
+            
             const voice = createVoice(ctx, freq, voiceStart, duration, individualGain, voiceOpts);
             
             if (multiChannel) voice.gain.connect(merger, 0, i);
@@ -132,7 +143,7 @@ function setupAudioGraph(ctx, chordState, startTime, duration, tuningData, opts,
             voice.noise.stop(voiceStart + duration);
         }
     });
-    compressor.connect(ctx.destination);
+    if (!multiChannel) compressor.connect(ctx.destination);
 }
 
 export function playChord(chordState, tuningData, opts) {
