@@ -1,4 +1,4 @@
-/* state.js Serial: #008 */
+/* state.js Serial: #009 */
 import { STR_TO_ACC, ACC_TO_STR } from './spelling.js';
 
 export const VOWEL_PRESETS = {
@@ -23,7 +23,7 @@ const AUDIO_MAP = {
 };
 
 // Map part properties to short codes for extensible URL packing
-const PART_PROPS = { 'g': 'gain', 't': 'tilt', '4': 'f4', '5': 'f5' };
+const PART_PROPS = { 'p': 'ping', 't': 'tilt', '4': 'f4', '5': 'f5' };
 
 export const appState = {
     chords: [{
@@ -58,10 +58,10 @@ export const appState = {
             q1: 10, q2: 15
         },
         partSettings: [
-            { name: 'Bass', f4: 3500, f5: 4500, gain: 0.0, tilt: 0.0 },
-            { name: 'Bari', f4: 3500, f5: 4500, gain: 0.0, tilt: 0.0 },
-            { name: 'Lead', f4: 3500, f5: 4500, gain: 0.0, tilt: 0.0 },
-            { name: 'Tenor', f4: 3500, f5: 4500, gain: 0.0, tilt: 0.0 }
+            { name: 'Bass', f4: 3500, f5: 4500, ping: 0.0, tilt: 0.0 },
+            { name: 'Bari', f4: 3500, f5: 4500, ping: 0.0, tilt: 0.0 },
+            { name: 'Lead', f4: 3500, f5: 4500, ping: 0.0, tilt: 0.0 },
+            { name: 'Tenor', f4: 3500, f5: 4500, ping: 0.0, tilt: 0.0 }
         ]
     }
 };
@@ -97,8 +97,8 @@ export function syncInputsToState() {
     });
 
     appState.settings.partSettings.forEach((part, i) => {
-        const gainEl = document.getElementById(`part-gain-${i}`);
-        if (gainEl) part.gain = parseFloat(gainEl.value);
+        const pingEl = document.getElementById(`part-ping-${i}`);
+        if (pingEl) part.ping = parseFloat(pingEl.value);
         const tiltEl = document.getElementById(`part-tilt-${i}`);
         if (tiltEl) part.tilt = parseFloat(tiltEl.value);
         const f4El = document.getElementById(`part-f4-${i}`);
@@ -145,11 +145,11 @@ export function syncStateToInputs() {
     });
 
     appState.settings.partSettings.forEach((part, i) => {
-        const gainEl = document.getElementById(`part-gain-${i}`);
-        if (gainEl) {
-            gainEl.value = part.gain;
-            const disp = document.getElementById(`v_part-gain-${i}`);
-            if (disp) disp.innerText = part.gain.toFixed(2);
+        const pingEl = document.getElementById(`part-ping-${i}`);
+        if (pingEl) {
+            pingEl.value = part.ping;
+            const disp = document.getElementById(`v_part-ping-${i}`);
+            if (disp) disp.innerText = part.ping.toFixed(2);
         }
 
         const tiltEl = document.getElementById(`part-tilt-${i}`);

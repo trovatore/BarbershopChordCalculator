@@ -1,4 +1,4 @@
-/* main.js Serial: #007 */
+/* main.js Serial: #065-PING */
 import { getAbsSemitone, getVariations, STR_TO_ACC, STEP_TO_SEMI, SERIAL as S_SPEL } from './spelling.js';
 import { renderControls, handleGlobalKey, SERIAL as S_UI } from './ui-controls.js';
 import { drawChord, SERIAL as S_NOT } from './notation.js';
@@ -6,7 +6,7 @@ import { playChord, saveChordAsWav, analyzeAndShow, SERIAL as S_AUD } from './au
 import { analyzeChord, SERIAL as S_THY } from './theory.js';
 import { appState, syncInputsToState, syncStateToInputs, loadStateFromURL, generatePermalink, getNoteString, VOWEL_PRESETS } from './state.js';
 
-const S_IDX = "#064-EXTENSIBLE";
+const S_IDX = "#065-PING";
 const SHOW_SERIALS = false;
 
 function getAudioSettings() {
@@ -174,7 +174,7 @@ function init() {
 
     // Part-specific formants listeners
     for (let i = 0; i < 4; i++) {
-        ['gain', 'tilt', 'f4', 'f5'].forEach(key => {
+        ['ping', 'tilt', 'f4', 'f5'].forEach(key => {
             const el = document.getElementById(`part-${key}-${i}`);
             if (el) {
                 el.oninput = () => {

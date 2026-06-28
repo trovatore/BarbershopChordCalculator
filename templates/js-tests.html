@@ -12,7 +12,7 @@
     </style>
 </head>
 <body>
-    <h1>Browser Unit Tests - Serial #052</h1>
+    <h1>Browser Unit Tests - Serial #053</h1>
     <div id="results">Running tests...</div>
     <div id="summary" class="summary"></div>
 
@@ -181,7 +181,7 @@
                 <input type="range" id="formantQ1" value="10"><div id="v_formantQ1"></div>
                 <input type="range" id="formantQ2" value="15"><div id="v_formantQ2"></div>
                 <!-- Part-specific mocks -->
-                <input type="range" id="part-gain-0" value="0.25"><div id="v_part-gain-0"></div>
+                <input type="range" id="part-ping-0" value="0.25"><div id="v_part-ping-0"></div>
                 <input type="range" id="part-tilt-0" value="0.5"><div id="v_part-tilt-0"></div>
                 <input type="range" id="part-f4-0" value="3000"><div id="v_part-f4-0"></div>
                 <input type="range" id="part-f5-0" value="5000"><div id="v_part-f5-0"></div>
@@ -190,7 +190,7 @@
             syncInputsToState();
             assert(appState.settings.volume === 0.15, "10.1 State: Volume synced from UI slider");
             assert(appState.settings.vowel === 'u', "10.2 State: Vowel radio synced to state");
-            assert(appState.settings.partSettings[0].gain === 0.25, "10.2.1 State: Part gain synced");
+            assert(appState.settings.partSettings[0].ping === 0.25, "10.2.1 State: Part ping synced");
             assert(appState.settings.partSettings[0].tilt === 0.5, "10.2.2 State: Part tilt synced");
 
             appState.settings.audio.f1 = 440;

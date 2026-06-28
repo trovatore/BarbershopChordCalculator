@@ -1,7 +1,7 @@
-/* audio.js Serial: #019 */
+/* audio.js Serial: #020 */
 import { getAbsSemitone } from './spelling.js';
 
-export const SERIAL = "#019";
+export const SERIAL = "#020";
 
 let audioCtx = null;
 let sharedNoiseBuffer = null;
@@ -125,8 +125,8 @@ function setupAudioGraph(ctx, chordState, startTime, duration, tuningData, opts,
                 ...opts,
                 f4: partSpec?.f4,
                 f5: partSpec?.f5,
-                f4Gain: partSpec?.gain,
-                f5Gain: partSpec?.gain,
+                f4Gain: partSpec?.ping,
+                f5Gain: partSpec?.ping,
                 tilt: partSpec?.tilt
             };
             
