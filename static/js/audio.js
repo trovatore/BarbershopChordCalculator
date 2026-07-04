@@ -109,11 +109,14 @@ function setupAudioGraph(ctx, chordState, startTime, duration, tuningData, opts,
     compressor.attack.setValueAtTime(0, ctx.currentTime);
     compressor.release.setValueAtTime(0.25, ctx.currentTime);
 
-    const individualGain = opts.volume / Math.sqrt(Math.max(1, opts.vps));
+    const individualGainBase = opts.volume / Math.sqrt(Math.max(1, opts.vps));
 
     chordState.forEach((note, i) => {
         const baseCents = (tuningData && tuningData[i] !== undefined) ? tuningData[i] : 0;
+        const partSpec = opts.partSettings ? opts.partSettings[i] : null;
         
+        const partGain = (partSpec?.mute) ? 0 : (individualGainBase * (partSpec?.volume ?? 1.0));
+
         for (let v = 0; v < opts.vps; v++) {
             const phaseJitter = Math.random() * opts.phaseJitter;
             const voiceStart = startTime + phaseJitter;
@@ -130,7 +133,7 @@ function setupAudioGraph(ctx, chordState, startTime, duration, tuningData, opts,
                 tilt: partSpec?.tilt
             };
             
-            const voice = createVoice(ctx, freq, voiceStart, duration, individualGain, voiceOpts);
+            const voice = createVoice(ctx, freq, voiceStart, duration, partGain, voiceOpts);
             
             if (multiChannel) voice.gain.connect(merger, 0, i);
             else voice.gain.connect(compressor);
@@ -205,9 +208,7 @@ export function getMagnitudes(signal, sr) {
 }
 
 export async function analyzeAndShow(chordState, tuningData, opts) {
-    // For spectral analysis, we only need a small slice of audio.
-    // We render 3 seconds instead of the full duration to keep it fast.
-    const renderDuration = Math.min(opts.duration, 3);
+    const renderDuration = opts.duration;
     const sr = 44100, N = 16384; 
     const offlineCtx = new OfflineAudioContext(4, sr * renderDuration, sr);
     setupAudioGraph(offlineCtx, chordState, 0, renderDuration, tuningData, opts, true);
@@ -218,8 +219,11 @@ export async function analyzeAndShow(chordState, tuningData, opts) {
     const names = ['Bass', 'Bari', 'Lead', 'Tenor'];
     const summedData = new Float32Array(N);
 
+    // Calculate a safe sample offset (center of the clip, avoiding attack/release)
+    const sliceStart = Math.max(0, Math.floor((renderDuration / 2) * sr) - (N / 2));
+
     for (let ch = 0; ch < 4; ch++) {
-        const samples = buffer.getChannelData(ch).slice(sr * 2, sr * 2 + N);
+        const samples = buffer.getChannelData(ch).slice(sliceStart, sliceStart + N);
         const windowed = samples.map((s, i) => s * hann[i]);
         const { freqs, mag } = getMagnitudes(windowed, sr);
         if (ch === 0) analysis.freqs = Array.from(freqs);
