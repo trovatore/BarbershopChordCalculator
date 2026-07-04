@@ -2,16 +2,12 @@
 import { ACC_TO_STR } from './spelling.js';
 export const SERIAL = "#025";
 
-/**
- * Renders the four voice control cards.
- */
-export function renderControls(container, chordState, selectedIdx, tuningState, onManualUpdate, onUpdateNote, onCycle) {
+export function renderControls(container, chordState, selectedIdx, tuningState, onManualUpdate, onUpdateNote, onCycle, partSettings) {
     container.innerHTML = '';
     chordState.forEach((p, i) => {
         const div = document.createElement('div');
         div.className = `part-ctrl ${i === selectedIdx ? 'active' : ''}`;
         
-        // Clicking the card area updates selection but does NOT focus input
         div.onclick = () => {
             window.dispatchEvent(new CustomEvent('selectPart', { detail: i }));
         };
@@ -19,9 +15,16 @@ export function renderControls(container, chordState, selectedIdx, tuningState, 
         const display = p.step.toUpperCase() + ACC_TO_STR[p.acc] + p.oct;
         const currentTuning = tuningState[i];
         const displayTuning = (currentTuning === "" || currentTuning === undefined) ? "" : (currentTuning > 0 ? "+" + currentTuning : currentTuning);
+        const pSet = partSettings[i];
 
         div.innerHTML = `
-            <div style="font-weight:600; font-size: 0.7rem; margin-bottom:5px; color:#666">${p.part.toUpperCase()}</div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
+                <div style="font-weight:600; font-size: 0.7rem; color:#666">${p.part.toUpperCase()}</div>
+                <div style="display:flex; gap:4px; align-items:center;">
+                    <input type="range" id="part-vol-${i}" min="0" max="1" step="0.05" value="${pSet.volume}" style="width:50px; height:4px;" title="Part Volume">
+                    <button id="part-mute-${i}" class="mute-btn ${pSet.mute ? 'active' : ''}" title="Mute Part" tabindex="-1">M</button>
+                </div>
+            </div>
             <div class="note-row">
                 <input type="text" class="note-input" id="note-input-${i}" value="${display}" autocomplete="off">
                 <input type="text" class="tuning-input" id="tuning-${i}" title="Adjustment (cents)" value="${displayTuning}" placeholder="0" autocomplete="off">
@@ -50,6 +53,23 @@ export function renderControls(container, chordState, selectedIdx, tuningState, 
         tInput.oninput = (e) => {
             window.dispatchEvent(new CustomEvent('tuningUpdate', { 
                 detail: { idx: i, val: e.target.value, manual: true } 
+            }));
+        };
+
+        const vInput = div.querySelector(`#part-vol-${i}`);
+        vInput.onclick = (e) => e.stopPropagation();
+        vInput.oninput = (e) => {
+            window.dispatchEvent(new CustomEvent('partAudioUpdate', { 
+                detail: { idx: i, volume: parseFloat(e.target.value) } 
+            }));
+        };
+
+        const mBtn = div.querySelector(`#part-mute-${i}`);
+        mBtn.onclick = (e) => {
+            e.stopPropagation();
+            const newState = !mBtn.classList.contains('active');
+            window.dispatchEvent(new CustomEvent('partAudioUpdate', { 
+                detail: { idx: i, mute: newState } 
             }));
         };
         

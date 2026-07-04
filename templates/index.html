@@ -45,6 +45,10 @@
         .adv-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 10px; font-size: 0.75rem; }
         .adv-grid label { font-weight: bold; color: #666; }
         .val-disp { text-align: right; color: #007bff; font-family: monospace; margin-top: 2px; }
+        .val-input { width: 60px; font-size: 0.75rem; border: 1px solid #ccc; border-radius: 3px; text-align: right; color: #007bff; font-family: monospace; }
+        
+        .mute-btn { background: #eee; border: 1px solid #ccc; border-radius: 3px; font-size: 0.65rem; padding: 2px 4px; color: #666; }
+        .mute-btn.active { background: #dc3545; color: white; border-color: #bd2130; }
     </style>
 </head>
 <body>
@@ -58,6 +62,7 @@
         <div style="display: flex; flex-direction: column; gap: 10px;">
             <label class="checkbox-label"><input type="checkbox" id="rootlessToggle"> Analyze rootless 9ths</label>
             <label class="checkbox-label" style="color: #28a745; font-weight: bold;"><input type="checkbox" id="offlineToggle"> Offline Mode (Local Theory)</label>
+            <label class="checkbox-label" style="color: #856404;"><input type="checkbox" id="legacyVocalToggle"> Use Legacy Vowel Values</label>
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px;">
                 <label class="checkbox-label" style="font-size: 0.75rem;">Voices per part: <input type="number" id="vpsCount" value="4" min="1" max="20" style="width: 35px;"></label>
                 <label class="checkbox-label" style="font-size: 0.75rem;">Duration (s): <input type="number" id="duration" value="5" min="1" max="15" style="width: 35px;"></label>
@@ -102,15 +107,15 @@
             <div style="grid-column: span 3; border-bottom: 1px solid #ddd; padding-bottom: 5px; margin-bottom: 5px; color: #444; font-weight: bold;">Vocal Tract (Formants)</div>
             <div>
                 <label>F1 (Height):<br><input type="range" id="f1" min="200" max="1000" value="730" style="width:100%"></label>
-                <div id="v_f1" class="val-disp">730Hz</div>
+                <div class="val-disp"><input type="number" id="n_f1" class="val-input">Hz</div>
             </div>
             <div>
                 <label>F2 (Place):<br><input type="range" id="f2" min="500" max="3000" value="1090" style="width:100%"></label>
-                <div id="v_f2" class="val-disp">1090Hz</div>
+                <div class="val-disp"><input type="number" id="n_f2" class="val-input">Hz</div>
             </div>
             <div>
                 <label>F3 (Color/Rhotic):<br><input type="range" id="f3" min="1000" max="4000" value="2440" style="width:100%"></label>
-                <div id="v_f3" class="val-disp">2440Hz</div>
+                <div class="val-disp"><input type="number" id="n_f3" class="val-input">Hz</div>
             </div>
 
             <div style="grid-column: span 3; border-bottom: 1px solid #ddd; padding-bottom: 5px; margin-top: 10px; color: #444; font-weight: bold;">Singer Formants (Part-Specific)</div>
@@ -197,35 +202,35 @@
             <div style="grid-column: span 3; border-bottom: 1px solid #ddd; padding-bottom: 5px; margin-top: 10px; color: #444; font-weight: bold;">Synthesis Engine</div>
             <div>
                 <label>Vibrato Jitter Cutoff:<br><input type="range" id="vibratoJitterCutoff" min="10" max="1000" value="100" style="width:100%"></label>
-                <div id="v_vibratoJitterCutoff" class="val-disp">100Hz</div>
+                <div class="val-disp"><input type="number" id="n_vibratoJitterCutoff" class="val-input">Hz</div>
             </div>
             <div>
                 <label>Vibrato Jitter Amount:<br><input type="range" id="vibratoJitterAmount" min="0" max="150" step="1" value="2.5" style="width:100%"></label>
-                <div id="v_vibratoJitterAmount" class="val-disp">2.5</div>
+                <div class="val-disp"><input type="number" id="n_vibratoJitterAmount" class="val-input"></div>
             </div>
             <div>
                 <label>Phase Jitter:<br><input type="range" id="phaseJitter" min="0" max="0.5" step="0.01" value="0.08" style="width:100%"></label>
-                <div id="v_phaseJitter" class="val-disp">0.08s</div>
+                <div class="val-disp"><input type="number" id="n_phaseJitter" step="0.01" class="val-input">s</div>
             </div>
             <div>
                 <label>Vibrato Depth:<br><input type="range" id="vibratoDepth" min="0" max="0.03" step="0.001" value="0.006" style="width:100%"></label>
-                <div id="v_vibratoDepth" class="val-disp">0.006</div>
+                <div class="val-disp"><input type="number" id="n_vibratoDepth" step="0.001" class="val-input"></div>
             </div>
             <div>
                 <label>Vibrato Rate Mean:<br><input type="range" id="vibratoRateMean" min="0" max="10" step="0.1" value="5.2" style="width:100%"></label>
-                <div id="v_vibratoRateMean" class="val-disp">5.2Hz</div>
+                <div class="val-disp"><input type="number" id="n_vibratoRateMean" step="0.1" class="val-input">Hz</div>
             </div>
             <div>
                 <label>Vibrato Rate Range:<br><input type="range" id="vibratoRateRange" min="0" max="5" step="0.1" value="1.2" style="width:100%"></label>
-                <div id="v_vibratoRateRange" class="val-disp">1.2Hz</div>
+                <div class="val-disp"><input type="number" id="n_vibratoRateRange" step="0.1" class="val-input">Hz</div>
             </div>
             <div>
                 <label>Formant Q1:<br><input type="range" id="formantQ1" min="1" max="50" step="1" value="10" style="width:100%"></label>
-                <div id="v_formantQ1" class="val-disp">10</div>
+                <div class="val-disp"><input type="number" id="n_formantQ1" class="val-input"></div>
             </div>
             <div>
                 <label>Formant Q2+:<br><input type="range" id="formantQ2" min="1" max="50" step="1" value="15" style="width:100%"></label>
-                <div id="v_formantQ2" class="val-disp">15</div>
+                <div class="val-disp"><input type="number" id="n_formantQ2" class="val-input"></div>
             </div>
         </div>
     </details>

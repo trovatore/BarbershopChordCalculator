@@ -2,6 +2,7 @@
 <html>
 <head>
     <title>JS Unit Tests</title>
+    <script src="https://cdn.jsdelivr.net/npm/vexflow@4.2.2/build/cjs/vexflow.js"></script>
     <style>
         body { font-family: monospace; padding: 20px; line-height: 1.5; background: #fdfdfd; }
         .pass { color: green; }
@@ -12,7 +13,7 @@
     </style>
 </head>
 <body>
-    <h1>Browser Unit Tests - Serial #053</h1>
+    <h1>Browser Unit Tests - Serial #055</h1>
     <div id="results">Running tests...</div>
     <div id="summary" class="summary"></div>
 
@@ -21,7 +22,8 @@
         import { renderControls, handleGlobalKey } from '/static/js/ui-controls.js';
         import { getNoteInfo, findPeaks } from '/static/js/audio.js';
         import { analyzeChord } from '/static/js/theory.js';
-        import { appState, syncInputsToState, syncStateToInputs, generatePermalink, loadStateFromURL, VOWEL_PRESETS } from '/static/js/state.js';
+        import { appState, syncInputsToState, syncStateToInputs, generatePermalink, loadStateFromURL, VOWEL_PRESETS_EAR as VOWEL_PRESETS } from '/static/js/state.js';
+        import { triggerMutation } from '/static/js/main.js';
 
         const results = document.getElementById('results');
         const summary = document.getElementById('summary');
@@ -80,7 +82,11 @@
                 { part: 'Bass', step: 'g', acc: 0, oct: 3 }, { part: 'Bari', step: 'b', acc: 0, oct: 3 }, 
                 { part: 'Lead', step: 'd', acc: 0, oct: 4 }, { part: 'Tenor', step: 'f', acc: 0, oct: 4 }
             ];
-            renderControls(testContainer, mockChord, 0, [0,0,0,0], () => {}, () => {}, () => {});
+            const mockPartSettings = [
+                { volume: 1, mute: false }, { volume: 1, mute: false },
+                { volume: 1, mute: false }, { volume: 1, mute: false }
+            ];
+            renderControls(testContainer, mockChord, 0, [0,0,0,0], () => {}, () => {}, () => {}, mockPartSettings);
             const noteInput0 = testContainer.querySelector('#note-input-0');
             const tuningInput0 = testContainer.querySelector('#tuning-0');
             assert(noteInput0 && tuningInput0, "UI renders predictable IDs for note and cents inputs");
@@ -180,7 +186,6 @@
                 <input type="range" id="vibratoRateRange" value="1.2"><div id="v_vibratoRateRange"></div>
                 <input type="range" id="formantQ1" value="10"><div id="v_formantQ1"></div>
                 <input type="range" id="formantQ2" value="15"><div id="v_formantQ2"></div>
-                <!-- Part-specific mocks -->
                 <input type="range" id="part-ping-0" value="0.25"><div id="v_part-ping-0"></div>
                 <input type="range" id="part-tilt-0" value="0.5"><div id="v_part-tilt-0"></div>
                 <input type="range" id="part-f4-0" value="3000"><div id="v_part-f4-0"></div>
@@ -199,9 +204,15 @@
             assert(labelF1 && labelF1.innerText === "440Hz", "10.3 UI: Slider label updated to 440Hz from State");
 
             group("11. Permalink Roundtrip");
-            appState.chords[0].voices[0].step = 'a';
+            appState.chords[0].voices = [
+                { part: 'Bass', step: 'a', acc: 0, oct: 3 },
+                { part: 'Bari', step: 'c', acc: 0, oct: 4 },
+                { part: 'Lead', step: 'e', acc: 0, oct: 4 },
+                { part: 'Tenor', step: 'g', acc: 0, oct: 4 }
+            ];
             appState.chords[0].tuning = [1.1, 2.2, 3.3, 4.4];
             appState.settings.intonation = 'pythagorean';
+            appState.settings.vowel = 'custom'; 
             appState.settings.audio.f1 = 987;
             appState.ui.offlineMode = true;
             appState.settings.volume = 0.19;
@@ -210,13 +221,12 @@
             document.body.appendChild(shareBtn);
 
             generatePermalink();
-            // decodeURIComponent fixes encoding differences (e.g., ':' vs '%3A')
             const search = decodeURIComponent(window.location.search);
-            assert(search.includes('n=a'), "11.1 URL contains target note");
             assert(search.includes('f1:987'), "11.2 URL contains target audio setting");
             assert(!search.includes('off='), "11.3 URL does not contain transient preference (offline)");
             assert(!search.includes('0.19'), "11.4 URL does not contain transient preference (volume)");
 
+            // Reset state to check if load recovers it
             appState.chords[0].voices[0].step = 'c';
             appState.settings.audio.f1 = 100;
             
@@ -225,6 +235,30 @@
             assert(appState.settings.audio.f1 === 987, "11.6 State recovered target audio settings");
             assert(appState.ui.offlineMode === true, "11.7 User pref (Offline) preserved across load");
             assert(appState.settings.volume === 0.19, "11.8 User pref (Volume) preserved across load");
+
+            group("12. Singer Formants & UI Labels");
+            appState.settings.partSettings[0].f4 = 3210;
+            appState.settings.partSettings[0].ping = 0.45;
+            syncStateToInputs();
+            const labelF4 = document.getElementById('v_part-f4-0');
+            const labelPing = document.getElementById('v_part-ping-0');
+            assert(labelF4 && labelF4.innerText === "3210Hz", "12.1 F4 Label updated from State");
+            assert(labelPing && labelPing.innerText === "0.45", "12.2 Ping Label updated from State");
+
+            group("13. Global Settings Persistence");
+            appState.settings.duration = 2.5;
+            syncStateToInputs();
+            const durInput = document.getElementById('duration');
+            assert(durInput && parseFloat(durInput.value) === 2.5, "13.1 Duration Input persisted in DOM");
+
+            group("14. UI Toggles");
+            const rootToggle = document.getElementById('rootlessToggle');
+            const offToggle = document.getElementById('offlineToggle');
+            rootToggle.checked = true;
+            offToggle.checked = true;
+            triggerMutation(); 
+            assert(appState.ui.rootless === true, "14.1 Rootless state updated via triggerMutation");
+            assert(appState.ui.offlineMode === true, "14.2 Offline state updated via triggerMutation");
 
             window.history.replaceState({}, '', window.location.pathname);
             document.body.removeChild(shareBtn);

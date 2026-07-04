@@ -1,12 +1,12 @@
-/* main.js Serial: #065-PING */
+/* main.js Serial: #067-STABLE */
 import { getAbsSemitone, getVariations, STR_TO_ACC, STEP_TO_SEMI, SERIAL as S_SPEL } from './spelling.js';
 import { renderControls, handleGlobalKey, SERIAL as S_UI } from './ui-controls.js';
 import { drawChord, SERIAL as S_NOT } from './notation.js';
 import { playChord, saveChordAsWav, analyzeAndShow, SERIAL as S_AUD } from './audio.js';
 import { analyzeChord, SERIAL as S_THY } from './theory.js';
-import { appState, syncInputsToState, syncStateToInputs, loadStateFromURL, generatePermalink, getNoteString, VOWEL_PRESETS } from './state.js';
+import { appState, syncInputsToState, syncStateToInputs, loadStateFromURL, generatePermalink, getNoteString, VOWEL_PRESETS_LEGACY, VOWEL_PRESETS_EAR } from './state.js';
 
-const S_IDX = "#065-PING";
+const S_IDX = "#067-STABLE";
 const SHOW_SERIALS = false;
 
 function getAudioSettings() {
@@ -35,8 +35,8 @@ async function fetchAnalysis() {
 
     const resultEl = document.getElementById('analysis-result');
     const pendingEl = document.getElementById('pendingIndicator');
-    resultEl.classList.add('pending');
-    pendingEl.style.display = 'inline';
+    if (resultEl) resultEl.classList.add('pending');
+    if (pendingEl) pendingEl.style.display = 'inline';
 
     try {
         const res = await fetch('/analyze', { 
@@ -53,27 +53,34 @@ async function fetchAnalysis() {
         }
     } catch (e) { console.error(e); }
     finally {
-        if (currentId === appState.ui.analysisId) {
+        if (currentId === appState.ui.analysisId && resultEl) {
             resultEl.classList.remove('pending');
-            pendingEl.style.display = 'none';
+            if (pendingEl) pendingEl.style.display = 'none';
         }
     }
 }
 
 function updateAnalysisResult(data, chord) {
     chord.analysis = data;
-    document.getElementById('chordName').innerText = data.common_name || "Unknown Chord";
-    document.getElementById('meta').innerText = (data.inversion + " - " + data.voicing).toUpperCase();
-    document.getElementById('roles').innerHTML = (data.notes || []).map(n => "<div>" + n.part + ": <strong>" + n.role + "</strong></div>").join('');
-    if (appState.settings.intonation !== 'custom') {
+    const nameEl = document.getElementById('chordName');
+    if (nameEl) nameEl.innerText = data.common_name || "Unknown Chord";
+    const metaEl = document.getElementById('meta');
+    if (metaEl) metaEl.innerText = (data.inversion + " - " + data.voicing).toUpperCase();
+    const rolesEl = document.getElementById('roles');
+    if (rolesEl) rolesEl.innerHTML = (data.notes || []).map(n => "<div>" + n.part + ": <strong>" + n.role + "</strong></div>").join('');
+    
+    if (appState.settings.intonation !== 'custom' && data.notes) {
         chord.tuning = data.notes.map(n => n.tuning);
     }
     renderUI();
 }
 
 function renderUI() {
+    const container = document.querySelector('.controls');
+    if (!container) return; 
+
     const chord = appState.chords[appState.activeChordIndex];
-    renderControls(document.querySelector('.controls'), chord.voices, appState.ui.selectedIdx, chord.tuning, manualUpdate, updateNote, cycleEnharmonic);
+    renderControls(container, chord.voices, appState.ui.selectedIdx, chord.tuning, manualUpdate, updateNote, cycleEnharmonic, appState.settings.partSettings);
     drawChord("notation", chord.voices);
     
     syncStateToInputs();
@@ -84,16 +91,19 @@ function renderUI() {
     }
 
     const manifestEl = document.getElementById('manifest');
-    const docsLink = "<a href='/help' target='_blank'>Documentation</a>";
-    if (SHOW_SERIALS) {
-        manifestEl.innerHTML = `index: ${S_IDX} | ${docsLink}<br>spel: ${S_SPEL} | ui: ${S_UI} | not: ${S_NOT} | aud: ${S_AUD} | thy: ${S_THY}`;
-    } else {
-        manifestEl.innerHTML = docsLink;
+    if (manifestEl) {
+        const docsLink = "<a href='/help' target='_blank'>Documentation</a>";
+        if (SHOW_SERIALS) {
+            manifestEl.innerHTML = `index: ${S_IDX} | ${docsLink}<br>spel: ${S_SPEL} | ui: ${S_UI} | not: ${S_NOT} | aud: ${S_AUD} | thy: ${S_THY}`;
+        } else {
+            manifestEl.innerHTML = docsLink;
+        }
     }
 }
 
-function triggerMutation() {
-    syncInputsToState();
+export function triggerMutation(skipSync = false) {
+    // Explicitly check for boolean true to avoid treating Event objects as 'skipSync'
+    if (skipSync !== true) syncInputsToState();
     renderUI();
     fetchAnalysis();
 }
@@ -130,49 +140,75 @@ function init() {
     loadStateFromURL();
     syncStateToInputs();
 
-    document.getElementById('rootlessToggle').onchange = triggerMutation;
-    document.getElementById('offlineToggle').onchange = triggerMutation;
-    document.getElementById('vpsCount').oninput = triggerMutation;
-    document.getElementById('duration').oninput = triggerMutation;
-    document.getElementById('volume').oninput = triggerMutation;
+    const safeListen = (id, evt, fn) => {
+        const el = document.getElementById(id);
+        if (el) el[evt] = fn;
+    };
+
+    safeListen('rootlessToggle', 'onchange', triggerMutation);
+    safeListen('offlineToggle', 'onchange', triggerMutation);
+    safeListen('legacyVocalToggle', 'onchange', () => {
+        appState.settings.presetVersion = document.getElementById('legacyVocalToggle').checked ? 'legacy' : 'ear';
+        const currentVow = appState.settings.vowel;
+        if (currentVow !== 'custom') {
+            const presets = appState.settings.presetVersion === 'legacy' ? VOWEL_PRESETS_LEGACY : VOWEL_PRESETS_EAR;
+            const freqs = presets[currentVow];
+            if (freqs) {
+                appState.settings.audio.f1 = freqs[0];
+                appState.settings.audio.f2 = freqs[1];
+                appState.settings.audio.f3 = freqs[2];
+            }
+        }
+        triggerMutation(true);
+    });
+
+    const audioPrefHandler = () => {
+        syncInputsToState();
+        syncStateToInputs();
+    };
+
+    safeListen('vpsCount', 'oninput', audioPrefHandler);
+    safeListen('duration', 'oninput', audioPrefHandler);
+    safeListen('volume', 'oninput', audioPrefHandler);
+    
     document.querySelectorAll('input[name="intonation"]').forEach(r => r.onchange = triggerMutation);
     
     document.querySelectorAll('input[name="vowel"]').forEach(radio => {
         radio.onchange = () => {
             appState.settings.vowel = radio.value;
             if (radio.value === 'custom') {
-                document.getElementById('advDetails').open = true;
+                const adv = document.getElementById('advDetails');
+                if (adv) adv.open = true;
             } else {
-                const freqs = VOWEL_PRESETS[radio.value];
+                const presets = appState.settings.presetVersion === 'legacy' ? VOWEL_PRESETS_LEGACY : VOWEL_PRESETS_EAR;
+                const freqs = presets[radio.value];
                 if (freqs) {
                     appState.settings.audio.f1 = freqs[0];
                     appState.settings.audio.f2 = freqs[1];
                     appState.settings.audio.f3 = freqs[2];
                 }
-                syncStateToInputs(); // Ensure UI sliders move to the preset values
             }
-            triggerMutation();
+            triggerMutation(true);
         }
     });
 
     ['f1', 'f2', 'f3', 'vibratoJitterCutoff', 'vibratoJitterAmount', 'phaseJitter', 
      'vibratoDepth', 'vibratoRateMean', 'vibratoRateRange', 'formantQ1', 'formantQ2'].forEach(id => {
         const el = document.getElementById(id);
-        if (el) {
-            el.oninput = () => {
-                if (id.startsWith('f') && !id.includes('Q')) {
-                    const customRad = document.querySelector('input[name="vowel"][value="custom"]');
-                    if (customRad) customRad.checked = true;
-                    appState.settings.vowel = 'custom';
-                }
-                syncInputsToState();
-                syncStateToInputs();
-                // Audio settings don't change theory, so we skip fetchAnalysis() to prevent UI jumps
-            };
-        }
+        const nel = document.getElementById('n_' + id);
+        const handler = () => {
+            if (id.startsWith('f') && !id.includes('Q')) {
+                const customRad = document.querySelector('input[name="vowel"][value="custom"]');
+                if (customRad) customRad.checked = true;
+                appState.settings.vowel = 'custom';
+            }
+            syncInputsToState();
+            syncStateToInputs();
+        };
+        if (el) el.oninput = handler;
+        if (nel) nel.oninput = handler;
     });
 
-    // Part-specific formants listeners
     for (let i = 0; i < 4; i++) {
         ['ping', 'tilt', 'f4', 'f5'].forEach(key => {
             const el = document.getElementById(`part-${key}-${i}`);
@@ -180,23 +216,22 @@ function init() {
                 el.oninput = () => {
                     syncInputsToState();
                     syncStateToInputs();
-                    // Audio settings don't change theory, so we skip fetchAnalysis()
                 };
             }
         });
     }
 
-    document.getElementById('playBtn').onclick = () => playChord(appState.chords[appState.activeChordIndex].voices, appState.chords[appState.activeChordIndex].tuning, getAudioSettings());
-    document.getElementById('saveBtn').onclick = () => saveChordAsWav(appState.chords[appState.activeChordIndex].voices, appState.chords[appState.activeChordIndex].tuning, getAudioSettings());
-    document.getElementById('shareBtn').onclick = generatePermalink;
-    document.getElementById('analyzeBtn').onclick = async () => {
+    safeListen('playBtn', 'onclick', () => playChord(appState.chords[appState.activeChordIndex].voices, appState.chords[appState.activeChordIndex].tuning, getAudioSettings()));
+    safeListen('saveBtn', 'onclick', () => saveChordAsWav(appState.chords[appState.activeChordIndex].voices, appState.chords[appState.activeChordIndex].tuning, getAudioSettings()));
+    safeListen('shareBtn', 'onclick', generatePermalink);
+    safeListen('analyzeBtn', 'onclick', async () => {
         const btn = document.getElementById('analyzeBtn');
         btn.disabled = true;
         setTimeout(async () => {
             try { await analyzeAndShow(appState.chords[appState.activeChordIndex].voices, appState.chords[appState.activeChordIndex].tuning, getAudioSettings()); }
             finally { btn.disabled = false; }
         }, 50);
-    };
+    });
 
     window.addEventListener('selectPart', (e) => {
         appState.ui.selectedIdx = e.detail;
@@ -221,14 +256,23 @@ function init() {
         }
     });
 
+    window.addEventListener('partAudioUpdate', (e) => {
+        const { idx, volume, mute } = e.detail;
+        const part = appState.settings.partSettings[idx];
+        if (volume !== undefined) part.volume = volume;
+        if (mute !== undefined) part.mute = mute;
+        renderUI();
+    });
+
     window.addEventListener('keydown', (e) => {
         handleGlobalKey(e, 
             { selectedIdx: appState.ui.selectedIdx, isTyping: document.activeElement.tagName === 'INPUT' },
             {
-                updateNote,
-                cycleEnharmonic,
-                renderUI,
-                playChord: () => document.getElementById('playBtn').click(),
+                updateNote, cycleEnharmonic, renderUI,
+                playChord: () => {
+                   const btn = document.getElementById('playBtn');
+                   if (btn) btn.click();
+                },
                 navigate: (idx) => {
                     appState.ui.selectedIdx = idx;
                     appState.ui.focusedElementId = null;
@@ -242,4 +286,10 @@ function init() {
     fetchAnalysis();
 }
 
-init();
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+        if (document.getElementById('notation')) init();
+    });
+} else {
+    if (document.getElementById('notation')) init();
+}
