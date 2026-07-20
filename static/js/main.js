@@ -4,7 +4,7 @@ import { renderControls, handleGlobalKey, SERIAL as S_UI } from './ui-controls.j
 import { drawChord, SERIAL as S_NOT } from './notation.js';
 import { playChord, saveChordAsWav, analyzeAndShow, SERIAL as S_AUD } from './audio.js';
 import { analyzeChord, SERIAL as S_THY } from './theory.js';
-import { appState, syncInputsToState, syncStateToInputs, loadStateFromURL, generatePermalink, getNoteString, VOWEL_PRESETS_LEGACY, VOWEL_PRESETS_EAR } from './state.js';
+import { appState, syncInputsToState, syncStateToInputs, loadStateFromURL, generatePermalink, getNoteString, syncChordToScoreDocument, VOWEL_PRESETS_LEGACY, VOWEL_PRESETS_EAR } from './state.js';
 
 const S_IDX = "#067-STABLE";
 const SHOW_SERIALS = false;
@@ -12,6 +12,7 @@ const SHOW_SERIALS = false;
 function getAudioSettings() {
     return {
         ...appState.settings.audio,
+        ...appState.chords[appState.activeChordIndex].formants,
         partSettings: appState.settings.partSettings,
         vps: appState.settings.vps,
         duration: appState.settings.duration,
@@ -51,7 +52,16 @@ async function fetchAnalysis() {
         if (currentId === appState.ui.analysisId && !data.error) {
             updateAnalysisResult(data, chord);
         }
-    } catch (e) { console.error(e); }
+    } catch (e) {
+        console.error('Falling back to client-side analysis (no /analyze backend reachable):', e);
+        if (currentId === appState.ui.analysisId) {
+            const data = analyzeChord(noteStrs, {
+                allow_rootless: appState.ui.rootless,
+                tuning_style: appState.settings.intonation
+            });
+            updateAnalysisResult(data, chord);
+        }
+    }
     finally {
         if (currentId === appState.ui.analysisId && resultEl) {
             resultEl.classList.remove('pending');
@@ -71,6 +81,10 @@ function updateAnalysisResult(data, chord) {
     
     if (appState.settings.intonation !== 'custom' && data.notes) {
         chord.tuning = data.notes.map(n => n.tuning);
+        // Analysis resolves after triggerMutation()'s own (necessarily pre-analysis) sync call
+        // already ran, so that earlier sync persisted stale tuning -- this is the point where
+        // the real, up-to-date values exist, and the only place that syncs them.
+        syncChordToScoreDocument();
     }
     renderUI();
 }
@@ -90,9 +104,24 @@ function renderUI() {
         if (el) el.focus();
     }
 
+    const editingLabelEl = document.getElementById('editingLabel');
+    if (editingLabelEl) {
+        if (!appState.ui.editingScoreChordId) {
+            editingLabelEl.textContent = 'Editing: Global Default';
+            editingLabelEl.className = 'editing-label';
+        } else if (appState.ui.scoreChordNotFound) {
+            editingLabelEl.textContent = 'Score chord not found (stale link?) — editing a local copy instead, changes won\'t rejoin the score';
+            editingLabelEl.className = 'editing-label error';
+        } else {
+            const pos = appState.ui.scoreChordPosition;
+            editingLabelEl.textContent = `Editing: Chord ${pos.index + 1} of ${pos.total} (from Score) — edits save back live`;
+            editingLabelEl.className = 'editing-label live';
+        }
+    }
+
     const manifestEl = document.getElementById('manifest');
     if (manifestEl) {
-        const docsLink = "<a href='/help' target='_blank'>Documentation</a>";
+        const docsLink = "<a href='help/' target='_blank'>Documentation</a>";
         if (SHOW_SERIALS) {
             manifestEl.innerHTML = `index: ${S_IDX} | ${docsLink}<br>spel: ${S_SPEL} | ui: ${S_UI} | not: ${S_NOT} | aud: ${S_AUD} | thy: ${S_THY}`;
         } else {
@@ -101,9 +130,66 @@ function renderUI() {
     }
 }
 
+// Maps engine/wav_chord_detector.py's output onto this chord's voices/tuning. Spelling is
+// resolved here (not server-side) via the same getVariations() logic used for every other
+// note edit in this app, spelling each voice in turn with the already-placed voices as
+// false-relation context -- low to high, same order a person would spell a chord by hand.
+// The detector only labels however many distinct voices it actually found (see its
+// docstring), so a chord with a unison/octave doubling leaves the remaining voice(s)
+// untouched rather than guessing.
+const WAV_PART_TO_VOICE_IDX = { Bass: 0, Bari: 1, Lead: 2, Tenor: 3 };
+
+function applyDetectedVoices(notes) {
+    const chord = appState.chords[appState.activeChordIndex];
+    const context = [];
+    notes.forEach(n => {
+        const idx = WAV_PART_TO_VOICE_IDX[n.part];
+        if (idx === undefined) return;
+        const guessOct = Math.floor(n.app_semitone / 12);
+        const spelled = getVariations(n.app_semitone, guessOct, context)[0];
+        chord.voices[idx] = Object.assign({}, chord.voices[idx], spelled, { rest: false });
+        chord.tuning[idx] = n.cents;
+        context.push({ step: spelled.step, semi: n.app_semitone });
+    });
+    // The whole point is to capture the *real* sung cents -- switch to custom intonation so
+    // the next analysis pass doesn't immediately overwrite them with a computed value (same
+    // protection the tuningUpdate manual-edit path already relies on).
+    appState.settings.intonation = 'custom';
+    const customInt = document.querySelector('input[name="intonation"][value="custom"]');
+    if (customInt) customInt.checked = true;
+    triggerMutation(true);
+}
+
+async function loadChordFromWav() {
+    const fileInput = document.getElementById('wavChordFile');
+    const statusEl = document.getElementById('wavChordStatus');
+    const file = fileInput && fileInput.files[0];
+    if (!file) return;
+
+    if (statusEl) statusEl.textContent = 'Analyzing...';
+    try {
+        const formData = new FormData();
+        formData.append('file', file);
+        const res = await fetch('detect-chord-wav', { method: 'POST', body: formData });
+        const data = await res.json();
+        if (data.error) {
+            if (statusEl) statusEl.textContent = 'Error: ' + data.error;
+            return;
+        }
+        applyDetectedVoices(data.notes);
+        const warning = (data.warnings || [])[0];
+        if (statusEl) statusEl.textContent = warning || `Loaded ${data.notes.length} voice(s).`;
+    } catch (e) {
+        if (statusEl) statusEl.textContent = 'Analysis failed: ' + e.message;
+    } finally {
+        fileInput.value = '';
+    }
+}
+
 export function triggerMutation(skipSync = false) {
     // Explicitly check for boolean true to avoid treating Event objects as 'skipSync'
     if (skipSync !== true) syncInputsToState();
+    syncChordToScoreDocument();
     renderUI();
     fetchAnalysis();
 }
@@ -147,16 +233,17 @@ function init() {
 
     safeListen('rootlessToggle', 'onchange', triggerMutation);
     safeListen('offlineToggle', 'onchange', triggerMutation);
+    safeListen('wavChordFile', 'onchange', loadChordFromWav);
     safeListen('legacyVocalToggle', 'onchange', () => {
         appState.settings.presetVersion = document.getElementById('legacyVocalToggle').checked ? 'legacy' : 'ear';
-        const currentVow = appState.settings.vowel;
-        if (currentVow !== 'custom') {
+        const chord = appState.chords[appState.activeChordIndex];
+        if (chord.vowel !== 'custom') {
             const presets = appState.settings.presetVersion === 'legacy' ? VOWEL_PRESETS_LEGACY : VOWEL_PRESETS_EAR;
-            const freqs = presets[currentVow];
+            const freqs = presets[chord.vowel];
             if (freqs) {
-                appState.settings.audio.f1 = freqs[0];
-                appState.settings.audio.f2 = freqs[1];
-                appState.settings.audio.f3 = freqs[2];
+                chord.formants.f1 = freqs[0];
+                chord.formants.f2 = freqs[1];
+                chord.formants.f3 = freqs[2];
             }
         }
         triggerMutation(true);
@@ -175,7 +262,8 @@ function init() {
     
     document.querySelectorAll('input[name="vowel"]').forEach(radio => {
         radio.onchange = () => {
-            appState.settings.vowel = radio.value;
+            const chord = appState.chords[appState.activeChordIndex];
+            chord.vowel = radio.value;
             if (radio.value === 'custom') {
                 const adv = document.getElementById('advDetails');
                 if (adv) adv.open = true;
@@ -183,16 +271,16 @@ function init() {
                 const presets = appState.settings.presetVersion === 'legacy' ? VOWEL_PRESETS_LEGACY : VOWEL_PRESETS_EAR;
                 const freqs = presets[radio.value];
                 if (freqs) {
-                    appState.settings.audio.f1 = freqs[0];
-                    appState.settings.audio.f2 = freqs[1];
-                    appState.settings.audio.f3 = freqs[2];
+                    chord.formants.f1 = freqs[0];
+                    chord.formants.f2 = freqs[1];
+                    chord.formants.f3 = freqs[2];
                 }
             }
             triggerMutation(true);
         }
     });
 
-    ['f1', 'f2', 'f3', 'vibratoJitterCutoff', 'vibratoJitterAmount', 'phaseJitter', 
+    ['f1', 'f2', 'f3', 'vibratoJitterCutoff', 'vibratoJitterAmount', 'phaseJitter',
      'vibratoDepth', 'vibratoRateMean', 'vibratoRateRange', 'formantQ1', 'formantQ2'].forEach(id => {
         const el = document.getElementById(id);
         const nel = document.getElementById('n_' + id);
@@ -200,7 +288,7 @@ function init() {
             if (id.startsWith('f') && !id.includes('Q')) {
                 const customRad = document.querySelector('input[name="vowel"][value="custom"]');
                 if (customRad) customRad.checked = true;
-                appState.settings.vowel = 'custom';
+                appState.chords[appState.activeChordIndex].vowel = 'custom';
             }
             syncInputsToState();
             syncStateToInputs();
@@ -254,6 +342,7 @@ function init() {
             const customInt = document.querySelector('input[name="intonation"][value="custom"]');
             if (customInt) customInt.checked = true;
         }
+        syncChordToScoreDocument();
     });
 
     window.addEventListener('partAudioUpdate', (e) => {

@@ -1,2 +1,25 @@
 .venv
 __pycache__
+
+# engine-kt (Kotlin Multiplatform spike, plan.md §9)
+engine-kt/build/
+engine-kt/.gradle/
+engine-kt/.kotlin/
+engine-kt/local.properties
+engine-kt/androidApp/build/
+engine-kt/androidApp/.cxx/
+
+# engine-cpp (portable DSP library, plan.md §9.9.11) — Bazel's convention symlinks, not real
+# files; MODULE.bazel.lock IS tracked (pins resolved dependency versions).
+engine-cpp/bazel-*
+
+# Real, copyrighted arrangement files used for local testing only — never commit these.
+*.xml
+!engine-kt/**/*.xml
+
+# scripts/build_web_only_branch.py scratch output (root build/, not engine-kt/build/) —
+# rebuilt fresh each run, never itself committed to master.
+/build/
+
+# directory for sharing stuff locally with Claude
+temp/**/*

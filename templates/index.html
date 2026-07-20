@@ -26,7 +26,10 @@
         .pending-text { font-size: 0.8rem; font-weight: normal; color: #999; margin-left: 10px; }
         .manifest { position: absolute; top: 10px; right: 15px; font-size: 0.65rem; color: #bbb; font-family: monospace; text-align: right; line-height: 1.4; }
         .manifest a { color: #007bff; text-decoration: none; font-weight: bold; }
-        
+        .editing-label { font-size: 0.75rem; color: #888; margin-bottom: 10px; }
+        .editing-label.live { color: #007bff; font-weight: bold; }
+        .editing-label.error { color: #c0392b; }
+
         .play-btn { background: #28a745; color: white; border: none; padding: 10px 20px; border-radius: 8px; font-size: 1rem; display: flex; align-items: center; gap: 8px; transition: background 0.2s; cursor: pointer; }
         .play-btn:hover { background: #218838; }
         .save-btn { background: #6c757d; color: white; border: none; padding: 10px 20px; border-radius: 8px; font-size: 1rem; display: flex; align-items: center; gap: 8px; transition: background 0.2s; cursor: pointer; }
@@ -55,9 +58,16 @@
 <div class="card">
     <div id="manifest" class="manifest"></div>
     <h1 style="margin-top:0; font-size: 1.1rem; color: #666;">Barbershop Chord Calculator</h1>
+    <div id="editingLabel" class="editing-label"></div>
     <div id="notation-container"><div id="notation"></div></div>
     <div class="controls"></div>
-    
+
+    <div style="display: flex; align-items: center; margin: 10px 0 15px; font-size: 0.85rem;">
+        <label for="wavChordFile" style="color: #555; margin-right: 6px;">Or load from a recording (.wav, one chord):</label>
+        <input type="file" id="wavChordFile" accept=".wav,audio/wav">
+        <span id="wavChordStatus" style="color: #888; margin-left: 8px;"></span>
+    </div>
+
     <div class="settings-grid">
         <div style="display: flex; flex-direction: column; gap: 10px;">
             <label class="checkbox-label"><input type="checkbox" id="rootlessToggle"> Analyze rootless 9ths</label>
@@ -241,7 +251,7 @@
                 <h2 id="chordName" style="margin:0;">Analyzing...</h2>
                 <button id="playBtn" class="play-btn"><span>▶</span> Play</button>
                 <button id="saveBtn" class="save-btn"><span>💾</span> Save .wav</button>
-                <button id="shareBtn" class="save-btn" style="background: #007bff;"><span>🔗</span> Copy Link</button>
+                <button id="shareBtn" class="save-btn" style="background: #007bff;" title="Copies a detached snapshot link — separate from this tab's live Score chord, if it's editing one"><span>🔗</span> Copy Link</button>
                 <button id="analyzeBtn" class="analyze-btn"><span>📊</span> Analyze</button>
             </div>
             <span id="pendingIndicator" class="pending-text" style="display:none;">(calculating...)</span>
@@ -251,11 +261,11 @@
     </div>
 </div>
 
-<script type="module" src="/static/js/main.js"></script>
+<script type="module" src="static/js/main.js"></script>
 <script>
     if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-            navigator.serviceWorker.register('/sw.js').then(reg => {
+            navigator.serviceWorker.register('sw.js').then(reg => {
                 console.log('SW Registered');
             }).catch(err => console.log('SW Registration failed', err));
         });

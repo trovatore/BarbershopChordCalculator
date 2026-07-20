@@ -1,5 +1,6 @@
 /* state.js Serial: #012 */
 import { STR_TO_ACC, ACC_TO_STR } from './spelling.js';
+import { readScoreDocument, writeScoreDocument } from './score-store.js';
 
 export const VOWEL_PRESETS_LEGACY = {
     'i': [270, 2290, 3010], 'y': [270, 1800, 2300], 'ɪ': [390, 1990, 2550],
@@ -20,7 +21,6 @@ export const VOWEL_PRESETS_EAR = {
 };
 
 const AUDIO_MAP = {
-    'f1': 'f1', 'f2': 'f2', 'f3': 'f3',
     'jc': 'vibratoJitterCutoff',
     'ja': 'vibratoJitterAmount',
     'pj': 'phaseJitter',
@@ -42,6 +42,10 @@ export const appState = {
             { part: 'Tenor', step: 'f', acc: 0, oct: 4 }
         ],
         tuning: [0, 0, 0, 0],
+        // Vowel is per-chord (the user's original ask, confirmed 2026-07-12) — formants live
+        // alongside it rather than in settings.audio, since the vowel *is* the formant triple.
+        vowel: 'a',
+        formants: { f1: 730, f2: 1090, f3: 2440 },
         analysis: null
     }],
     activeChordIndex: 0,
@@ -50,17 +54,20 @@ export const appState = {
         focusedElementId: null,
         analysisId: 0,
         offlineMode: false,
-        rootless: false
+        rootless: false,
+        // Set when this tab was opened from a Score row (plan.md §10.2) via ?sid=<chord id>.
+        // null means "editing the global default" — see the §8 Q2 labeling this drives.
+        editingScoreChordId: null,
+        scoreChordPosition: null,
+        scoreChordNotFound: false
     },
     settings: {
         intonation: 'just',
-        vowel: 'a',
         vps: 4,
         duration: 5,
         volume: 0.05,
         presetVersion: 'ear',
         audio: {
-            f1: 730, f2: 1090, f3: 2440,
             vibratoJitterCutoff: 100, vibratoJitterAmount: 2.5,
             phaseJitter: 0.08, vibratoDepth: 0.006,
             vibratoRateMean: 5.2, vibratoRateRange: 1.2,
@@ -81,20 +88,33 @@ export function getNoteString(obj) {
 }
 
 export function syncInputsToState() {
+    const chord = appState.chords[appState.activeChordIndex];
+
     const rToggle = document.getElementById('rootlessToggle');
     if (rToggle) appState.ui.rootless = rToggle.checked;
-    
+
     const oToggle = document.getElementById('offlineToggle');
     if (oToggle) appState.ui.offlineMode = oToggle.checked;
 
     const vToggle = document.getElementById('legacyVocalToggle');
     if (vToggle) appState.settings.presetVersion = vToggle.checked ? 'legacy' : 'ear';
-    
+
     const intRad = document.querySelector('input[name="intonation"]:checked');
     if (intRad) appState.settings.intonation = intRad.value;
-    
+
     const vowRad = document.querySelector('input[name="vowel"]:checked');
-    if (vowRad) appState.settings.vowel = vowRad.value;
+    if (vowRad) chord.vowel = vowRad.value;
+
+    // f1/f2/f3 are per-chord (they ARE the vowel) — kept out of AUDIO_MAP, synced explicitly.
+    ['f1', 'f2', 'f3'].forEach(key => {
+        const el = document.getElementById(key);
+        const nel = document.getElementById('n_' + key);
+        if (nel && nel === document.activeElement) {
+            chord.formants[key] = parseFloat(nel.value) || 0;
+        } else if (el) {
+            chord.formants[key] = parseFloat(el.value) || 0;
+        }
+    });
 
     const vps = document.getElementById('vpsCount');
     if (vps) appState.settings.vps = parseInt(vps.value) || 4;
@@ -133,6 +153,8 @@ export function syncInputsToState() {
 }
 
 export function syncStateToInputs() {
+    const chord = appState.chords[appState.activeChordIndex];
+
     const rToggle = document.getElementById('rootlessToggle');
     if (rToggle) rToggle.checked = appState.ui.rootless;
 
@@ -141,12 +163,24 @@ export function syncStateToInputs() {
 
     const vToggle = document.getElementById('legacyVocalToggle');
     if (vToggle) vToggle.checked = (appState.settings.presetVersion === 'legacy');
-    
+
     const intRad = document.querySelector(`input[name="intonation"][value="${appState.settings.intonation}"]`);
     if (intRad) intRad.checked = true;
-    
-    const vowRad = document.querySelector(`input[name="vowel"][value="${appState.settings.vowel}"]`);
+
+    const vowRad = document.querySelector(`input[name="vowel"][value="${chord.vowel}"]`);
     if (vowRad) vowRad.checked = true;
+
+    ['f1', 'f2', 'f3'].forEach(key => {
+        const el = document.getElementById(key);
+        const nel = document.getElementById('n_' + key);
+        const val = chord.formants[key];
+
+        if (el && document.activeElement !== el) el.value = val;
+        if (nel && document.activeElement !== nel) nel.value = val;
+
+        const disp = document.getElementById('v_' + key);
+        if (disp) disp.innerText = val + "Hz";
+    });
 
     const vps = document.getElementById('vpsCount');
     if (vps && document.activeElement !== vps) vps.value = appState.settings.vps;
@@ -194,7 +228,28 @@ export function syncStateToInputs() {
 export function loadStateFromURL() {
     const params = new URLSearchParams(window.location.search);
     const chord = appState.chords[0];
-    
+
+    // Opened from a Score row (plan.md §6.2/§10.2) — the chord's id is the source of truth,
+    // read straight from the shared document rather than from URL params (which can't cleanly
+    // carry the newer per-chord fields like beats/volumePerPart anyway). Skips the rest of this
+    // function's normal param parsing entirely, same as §6.2 originally specified.
+    const sid = params.get('sid');
+    if (sid) {
+        const doc = readScoreDocument();
+        const idx = doc ? doc.chords.findIndex(c => c.id === sid) : -1;
+        if (doc && idx !== -1) {
+            appState.chords[0] = doc.chords[idx];
+            appState.ui.editingScoreChordId = sid;
+            appState.ui.scoreChordPosition = { index: idx, total: doc.chords.length };
+            appState.ui.scoreChordNotFound = false;
+        } else {
+            appState.ui.editingScoreChordId = sid;
+            appState.ui.scoreChordNotFound = true;
+        }
+        syncStateToInputs();
+        return;
+    }
+
     if (params.has('n')) {
         params.get('n').split(',').forEach((n, i) => {
             if (i < 4) {
@@ -212,10 +267,10 @@ export function loadStateFromURL() {
     }
     if (params.has('t')) appState.settings.intonation = params.get('t');
     if (params.has('v')) {
-        appState.settings.vowel = params.get('v');
+        chord.vowel = params.get('v');
         const presets = appState.settings.presetVersion === 'legacy' ? VOWEL_PRESETS_LEGACY : VOWEL_PRESETS_EAR;
-        const freqs = presets[appState.settings.vowel];
-        if (freqs) [appState.settings.audio.f1, appState.settings.audio.f2, appState.settings.audio.f3] = freqs;
+        const freqs = presets[chord.vowel];
+        if (freqs) [chord.formants.f1, chord.formants.f2, chord.formants.f3] = freqs;
     }
     if (params.has('vps')) appState.settings.vps = parseInt(params.get('vps')) || 4;
     
@@ -225,7 +280,9 @@ export function loadStateFromURL() {
             const num = parseFloat(val);
             if (isNaN(num)) return;
 
-            if (AUDIO_MAP[code]) {
+            if (code === 'f1' || code === 'f2' || code === 'f3') {
+                chord.formants[code] = num;
+            } else if (AUDIO_MAP[code]) {
                 appState.settings.audio[AUDIO_MAP[code]] = num;
             } else if (code.startsWith('p')) {
                 const pIdx = parseInt(code[1]);
@@ -238,6 +295,23 @@ export function loadStateFromURL() {
     syncStateToInputs();
 }
 
+/**
+ * Writes the currently-edited chord back into the shared score:current document, if this tab
+ * was opened from a Score row (plan.md §6.2). Called from every existing commit point
+ * (triggerMutation, the tuningUpdate handler) — no new trigger rule, per §6.2's design; this
+ * just makes those same commits also persist to the shared document, matched by id.
+ */
+export function syncChordToScoreDocument() {
+    if (!appState.ui.editingScoreChordId || appState.ui.scoreChordNotFound) return;
+    const doc = readScoreDocument();
+    if (!doc) return;
+    const idx = doc.chords.findIndex(c => c.id === appState.ui.editingScoreChordId);
+    if (idx === -1) return;
+    doc.chords[idx] = Object.assign({}, appState.chords[appState.activeChordIndex], { updatedAt: Date.now() });
+    doc.updatedAt = Date.now();
+    writeScoreDocument(doc);
+}
+
 export function generatePermalink() {
     const chord = appState.chords[appState.activeChordIndex];
     const p = new URLSearchParams();
@@ -245,12 +319,14 @@ export function generatePermalink() {
     p.set('n', chord.voices.map(s => getNoteString(s)).join(','));
     p.set('c', chord.tuning.join(','));
     p.set('t', appState.settings.intonation);
-    p.set('v', appState.settings.vowel);
+    p.set('v', chord.vowel);
     p.set('vps', appState.settings.vps);
-    
+
     const packed = [];
+    if (chord.vowel === 'custom') {
+        ['f1', 'f2', 'f3'].forEach(key => packed.push(`${key}:${chord.formants[key]}`));
+    }
     Object.entries(AUDIO_MAP).forEach(([code, key]) => {
-        if (appState.settings.vowel !== 'custom' && (key === 'f1' || key === 'f2' || key === 'f3')) return;
         packed.push(`${code}:${appState.settings.audio[key]}`);
     });
 
@@ -262,17 +338,29 @@ export function generatePermalink() {
 
     p.set('a', packed.join(','));
     
-    const newUrl = window.location.pathname + '?' + p.toString();
-    window.history.replaceState({}, '', newUrl);
-    
-    if (navigator.clipboard) {
-        navigator.clipboard.writeText(window.location.href);
+    // A detached snapshot link, distinct from the live `?sid=<id>` link this tab may currently be
+    // on (plan.md §10.3 — the two link types needing a visible distinction). Deliberately NOT
+    // written into the visible address bar via history.replaceState while a live Score-chord edit
+    // is in progress: doing so would silently swap the URL bar away from the live ?sid= link out
+    // from under the user, even though the tab keeps editing the live score exactly as before
+    // (editingLabel still says so) — a real mismatch between what the address bar shows and
+    // what's actually happening. For the ordinary (non-live) case, updating the address bar to
+    // match the copied link is still useful and unchanged from before.
+    const detachedUrl = window.location.origin + window.location.pathname + '?' + p.toString();
+    if (!appState.ui.editingScoreChordId) {
+        window.history.replaceState({}, '', detachedUrl);
     }
-    
+
+    if (navigator.clipboard) {
+        navigator.clipboard.writeText(detachedUrl);
+    }
+
     const btn = document.getElementById('shareBtn');
     if (btn) {
         const oldHtml = btn.innerHTML;
-        btn.innerHTML = "<span>✅</span> Copied!";
+        // Explicit "detached" wording so the copied link never reads as if it were the live
+        // Score-chord link, regardless of which tab/mode you clicked it from.
+        btn.innerHTML = "<span>✅</span> Copied (detached link)!";
         setTimeout(() => btn.innerHTML = oldHtml, 2000);
     }
 }

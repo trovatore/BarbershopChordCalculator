@@ -1,3 +1,5 @@
 music21
 flask
 gunicorn
+numpy
+scipy

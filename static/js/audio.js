@@ -235,7 +235,7 @@ export async function analyzeAndShow(chordState, tuningData, opts) {
     analysis.parts.push({ name: 'Summed', magnitudes: Array.from(summedMag), peaks: findPeaks(summedMag, analysis.freqs) });
 
     localStorage.setItem('chordAnalysisData', JSON.stringify(analysis));
-    window.open('/analysis', '_blank');
+    window.open('analysis/', '_blank');
 }
 
 export function findPeaks(mag, freqs) {

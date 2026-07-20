@@ -7,10 +7,19 @@ from flask import (
     Response,
 )
 from engine.analyzer import ChordAnalyzer
+from engine.wav_chord_detector import detect_chord
+import io
 import os
 from typing import Union, Tuple, List, Any
 
 app = Flask(__name__)
+
+# Kotlin/JS browser bundle built by `./gradlew jsBrowserDevelopmentWebpack` in engine-kt/
+# (plan.md §5.6/§5.7). Not committed — engine-kt/build/ is gitignored build output — so /score
+# 404s on the JS request until that Gradle task has been run at least once locally.
+ENGINE_JS_DIR = os.path.join(
+    "engine-kt", "build", "kotlin-webpack", "js", "productionExecutable"
+)
 
 
 @app.route("/")
@@ -18,12 +27,24 @@ def index() -> str:
     return render_template("index.html")
 
 
+@app.route("/score/")
+def score() -> str:
+    return render_template("score.html")
+
+
+@app.route("/engine/barbershop-engine.js")
+def serve_engine_js() -> Response:
+    return send_from_directory(
+        ENGINE_JS_DIR, "barbershop-engine.js", mimetype="application/javascript"
+    )
+
+
 @app.route("/tests/js")
 def js_tests() -> str:
     return render_template("js-tests.html")
 
 
-@app.route("/help")
+@app.route("/help/")
 def help() -> Union[str, Tuple[str, int]]:
     try:
         base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -55,9 +76,20 @@ def analyze() -> Union[Response, Tuple[Response, int]]:
         return jsonify({"error": str(e)}), 400
 
 
-@app.route("/analysis")
+@app.route("/analysis/")
 def spectral_analysis() -> str:
     return render_template("analysis.html")
+
+
+@app.route("/detect-chord-wav", methods=["POST"])
+def detect_chord_wav() -> Union[Response, Tuple[Response, int]]:
+    if "file" not in request.files:
+        return jsonify({"error": "No file provided."}), 400
+    try:
+        result = detect_chord(io.BytesIO(request.files["file"].read()))
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
 
 
 @app.route("/sw.js")

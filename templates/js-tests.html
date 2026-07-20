@@ -194,11 +194,11 @@
 
             syncInputsToState();
             assert(appState.settings.volume === 0.15, "10.1 State: Volume synced from UI slider");
-            assert(appState.settings.vowel === 'u', "10.2 State: Vowel radio synced to state");
+            assert(appState.chords[0].vowel === 'u', "10.2 State: Vowel radio synced to active chord");
             assert(appState.settings.partSettings[0].ping === 0.25, "10.2.1 State: Part ping synced");
             assert(appState.settings.partSettings[0].tilt === 0.5, "10.2.2 State: Part tilt synced");
 
-            appState.settings.audio.f1 = 440;
+            appState.chords[0].formants.f1 = 440;
             syncStateToInputs();
             const labelF1 = document.getElementById('v_f1');
             assert(labelF1 && labelF1.innerText === "440Hz", "10.3 UI: Slider label updated to 440Hz from State");
@@ -212,11 +212,11 @@
             ];
             appState.chords[0].tuning = [1.1, 2.2, 3.3, 4.4];
             appState.settings.intonation = 'pythagorean';
-            appState.settings.vowel = 'custom'; 
-            appState.settings.audio.f1 = 987;
+            appState.chords[0].vowel = 'custom';
+            appState.chords[0].formants.f1 = 987;
             appState.ui.offlineMode = true;
             appState.settings.volume = 0.19;
-            
+
             const shareBtn = document.createElement('button'); shareBtn.id = 'shareBtn';
             document.body.appendChild(shareBtn);
 
@@ -228,11 +228,11 @@
 
             // Reset state to check if load recovers it
             appState.chords[0].voices[0].step = 'c';
-            appState.settings.audio.f1 = 100;
-            
+            appState.chords[0].formants.f1 = 100;
+
             loadStateFromURL();
             assert(appState.chords[0].voices[0].step === 'a', "11.5 State recovered target notes");
-            assert(appState.settings.audio.f1 === 987, "11.6 State recovered target audio settings");
+            assert(appState.chords[0].formants.f1 === 987, "11.6 State recovered target audio settings");
             assert(appState.ui.offlineMode === true, "11.7 User pref (Offline) preserved across load");
             assert(appState.settings.volume === 0.19, "11.8 User pref (Volume) preserved across load");
 
