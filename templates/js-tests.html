@@ -22,7 +22,7 @@
         import { renderControls, handleGlobalKey } from '/static/js/ui-controls.js';
         import { getNoteInfo, findPeaks } from '/static/js/audio.js';
         import { analyzeChord } from '/static/js/theory.js';
-        import { appState, syncInputsToState, syncStateToInputs, generatePermalink, loadStateFromURL, isScoreDocumentDirty, isChordDocumentDirty, syncChordToStandaloneDocument, establishFreshChordBaseline, VOWEL_PRESETS_EAR as VOWEL_PRESETS } from '/static/js/state.js';
+        import { appState, syncInputsToState, syncStateToInputs, generatePermalink, loadStateFromURL, isScoreDocumentDirty, isChordDocumentDirty, syncChordToStandaloneDocument, establishFreshChordBaseline, chordDocStore, VOWEL_PRESETS_EAR as VOWEL_PRESETS } from '/static/js/state.js';
         import { triggerMutation, updateNote, manualUpdate, cycleEnharmonic, undoChordEdit, redoChordEdit, canUndoChord, canRedoChord } from '/static/js/main.js';
         import { createDocumentStore } from '/static/js/document-store.js';
         import { readScoreDocument, writeScoreDocument, SCORE_STORAGE_KEY } from '/static/js/score-store.js';
@@ -346,6 +346,15 @@
             // so those are verified live in a real browser instead (plan.md §10.7.7-equivalent
             // note). What's testable here without init(): the mutation functions themselves and
             // undoChordEdit/redoChordEdit, which is exactly where pushChordUndo() was wired in.
+            // canUndoChord/undoChordEdit/etc. route through state.js's chordDocStore whenever
+            // editingScoreChordId isn't set (plan.md §10.8.4 -- persisted, so it survives a real
+            // page reload) -- that's a module-load-time singleton, not something a fresh
+            // localStorage.removeItem() before this group can reset the way section 15's own
+            // throwaway createDocumentStore() instance can, since it may have already rehydrated
+            // from whatever a real prior visit to `/` left behind. markImported() is the only way
+            // to force both its in-memory and persisted history back to empty deterministically.
+            const prevChordHistory = localStorage.getItem(CHORD_STORAGE_KEY + ':history');
+            chordDocStore.markImported({}, 'test-reset');
             appState.chords[0].voices[1] = { part: 'Bari', step: 'c', acc: 0, oct: 4 };
             const beforeVoices = JSON.stringify(appState.chords[0].voices);
             updateNote(1, 2);
@@ -425,6 +434,9 @@
 
             if (prevChordDoc === null) localStorage.removeItem(CHORD_STORAGE_KEY);
             else localStorage.setItem(CHORD_STORAGE_KEY, prevChordDoc);
+
+            if (prevChordHistory === null) localStorage.removeItem(CHORD_STORAGE_KEY + ':history');
+            else localStorage.setItem(CHORD_STORAGE_KEY + ':history', prevChordHistory);
 
             window.history.replaceState({}, '', window.location.pathname);
             document.body.removeChild(shareBtn);
