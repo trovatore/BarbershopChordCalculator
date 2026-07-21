@@ -22,8 +22,11 @@
         import { renderControls, handleGlobalKey } from '/static/js/ui-controls.js';
         import { getNoteInfo, findPeaks } from '/static/js/audio.js';
         import { analyzeChord } from '/static/js/theory.js';
-        import { appState, syncInputsToState, syncStateToInputs, generatePermalink, loadStateFromURL, VOWEL_PRESETS_EAR as VOWEL_PRESETS } from '/static/js/state.js';
-        import { triggerMutation } from '/static/js/main.js';
+        import { appState, syncInputsToState, syncStateToInputs, generatePermalink, loadStateFromURL, isScoreDocumentDirty, isChordDocumentDirty, syncChordToStandaloneDocument, establishFreshChordBaseline, VOWEL_PRESETS_EAR as VOWEL_PRESETS } from '/static/js/state.js';
+        import { triggerMutation, updateNote, manualUpdate, cycleEnharmonic, undoChordEdit, redoChordEdit, canUndoChord, canRedoChord } from '/static/js/main.js';
+        import { createDocumentStore } from '/static/js/document-store.js';
+        import { readScoreDocument, writeScoreDocument, SCORE_STORAGE_KEY } from '/static/js/score-store.js';
+        import { readChordDocument, writeChordDocument, CHORD_STORAGE_KEY } from '/static/js/chord-store.js';
 
         const results = document.getElementById('results');
         const summary = document.getElementById('summary');
@@ -259,6 +262,169 @@
             triggerMutation(); 
             assert(appState.ui.rootless === true, "14.1 Rootless state updated via triggerMutation");
             assert(appState.ui.offlineMode === true, "14.2 Offline state updated via triggerMutation");
+
+            group("15. Document Store (dirty-state + undo/redo, plan.md §10.7)");
+            localStorage.removeItem('test:doc-store');
+            const store = createDocumentStore('test:doc-store', { undoLimit: 3 });
+
+            let doc = store.markImported({ n: 1 }, 'imported.xml');
+            assert(store.isDirty(doc) === false, "15.1 Freshly imported doc is not dirty");
+            assert(doc.sourceLabel === 'imported.xml', "15.2 Import records the source label");
+
+            doc.content = { n: 2 };
+            assert(store.isDirty(doc) === true, "15.3 Mutating content makes the doc dirty");
+
+            doc = store.markExported(doc, 'exported.xml');
+            assert(store.isDirty(doc) === false, "15.4 Export clears dirty state");
+            assert(doc.sourceLabel === 'exported.xml', "15.5 Export can relabel the doc");
+
+            const neverSaved = { content: { n: 1 } };
+            assert(store.isDirty(neverSaved) === true, "15.6 A doc with no sourceSnapshot yet reads as dirty");
+
+            store.pushUndo({ n: 10 });
+            store.pushUndo({ n: 11 });
+            let restored = store.undo({ n: 12 });
+            assert(restored.n === 11, "15.7 Undo restores the most recent pre-mutation snapshot");
+            assert(store.canRedo() === true, "15.8 Undo populates the redo stack");
+            const redone = store.redo({ n: 11 });
+            assert(redone.n === 12, "15.9 Redo restores what undo just replaced");
+
+            // Redo above re-pushed 11 onto the undo stack (back to [10, 11]) -- walk back twice more.
+            assert(store.undo({ n: 0 }).n === 11, "15.10 Undo walks back to 11 again after the redo");
+            assert(store.undo({ n: 0 }).n === 10, "15.11 Undo can keep walking back further");
+            assert(store.canUndo() === false, "15.12 Undo stack empties out correctly");
+            assert(store.undo({ n: 0 }) === null, "15.13 Undo on an empty stack returns null");
+
+            store.pushUndo({ n: 'a' });
+            store.pushUndo({ n: 'b' });
+            store.pushUndo({ n: 'c' });
+            store.pushUndo({ n: 'd' });
+            let popped = [];
+            while (store.canUndo()) popped.push(store.undo({}).n);
+            assert(popped.join(',') === 'd,c,b', "15.14 Undo stack is bounded (oldest entry dropped past the limit)");
+
+            store.pushUndo({ n: 1 });
+            store.undo({ n: 2 });
+            assert(store.canRedo() === true, "15.15 Sanity: redo available right after an undo");
+            store.pushUndo({ n: 3 });
+            assert(store.canRedo() === false, "15.16 A new edit clears the redo stack");
+
+            const reimported = store.markImported({ n: 99 }, 'second.xml');
+            assert(store.canUndo() === false && store.canRedo() === false, "15.17 Re-import resets undo/redo history");
+
+            store.write(reimported);
+            assert(store.read().content.n === 99, "15.18 read()/write() round-trip through localStorage");
+            localStorage.removeItem('test:doc-store');
+
+            group("16. Score-document dirty mirroring (state.js, plan.md §10.7.4)");
+            const prevScoreDoc = localStorage.getItem(SCORE_STORAGE_KEY);
+            localStorage.removeItem(SCORE_STORAGE_KEY);
+            assert(isScoreDocumentDirty() === false, "16.1 No score document at all reads as not dirty");
+
+            const fakeChords = [{ id: 'c1', voices: [], tuning: [0, 0, 0, 0] }];
+            const fakeMeta = { keyFifths: 0, timeBeats: 4, timeBeatType: 4, measureBoundariesBeats: [4] };
+            writeScoreDocument({
+                chords: fakeChords,
+                metadata: fakeMeta,
+                sourceLabel: 'fixture.xml',
+                sourceSnapshot: JSON.stringify({ chords: fakeChords, metadata: fakeMeta }),
+                updatedAt: Date.now(),
+            });
+            assert(isScoreDocumentDirty() === false, "16.2 Content matching sourceSnapshot reads as clean");
+
+            const edited = readScoreDocument();
+            edited.chords[0].tuning = [5, 0, 0, 0];
+            writeScoreDocument(edited);
+            assert(isScoreDocumentDirty() === true, "16.3 Editing a chord after the snapshot reads as dirty");
+
+            if (prevScoreDoc === null) localStorage.removeItem(SCORE_STORAGE_KEY);
+            else localStorage.setItem(SCORE_STORAGE_KEY, prevScoreDoc);
+
+            group("17. Per-field Undo/Redo wiring (main.js, plan.md §10.7.3)");
+            // main.js's own DOM-event listeners (tuningUpdate/inputFocus/keydown) only get
+            // attached by init(), which this test page never triggers (no #notation element) --
+            // so those are verified live in a real browser instead (plan.md §10.7.7-equivalent
+            // note). What's testable here without init(): the mutation functions themselves and
+            // undoChordEdit/redoChordEdit, which is exactly where pushChordUndo() was wired in.
+            appState.chords[0].voices[1] = { part: 'Bari', step: 'c', acc: 0, oct: 4 };
+            const beforeVoices = JSON.stringify(appState.chords[0].voices);
+            updateNote(1, 2);
+            assert(JSON.stringify(appState.chords[0].voices) !== beforeVoices, "17.1 updateNote actually mutates the chord");
+            assert(canUndoChord() === true, "17.2 updateNote pushes an undo entry");
+            undoChordEdit();
+            assert(JSON.stringify(appState.chords[0].voices) === beforeVoices, "17.3 Undo restores pre-edit voices");
+            assert(canRedoChord() === true, "17.4 Undo populates redo");
+            redoChordEdit();
+            assert(JSON.stringify(appState.chords[0].voices) !== beforeVoices, "17.5 Redo re-applies the edit");
+            undoChordEdit(); // drain back to a clean baseline before the next sub-test
+
+            const beforeManual = JSON.stringify(appState.chords[0].voices);
+            manualUpdate(0, 'F#3');
+            assert(JSON.stringify(appState.chords[0].voices) !== beforeManual, "17.6 manualUpdate actually mutates the chord");
+            undoChordEdit();
+            assert(JSON.stringify(appState.chords[0].voices) === beforeManual, "17.7 Undo restores pre-manualUpdate voices");
+
+            const beforeCycle = JSON.stringify(appState.chords[0].voices[2]);
+            cycleEnharmonic(2);
+            assert(JSON.stringify(appState.chords[0].voices[2]) !== beforeCycle, "17.8 cycleEnharmonic changes the spelling");
+            undoChordEdit();
+            assert(JSON.stringify(appState.chords[0].voices[2]) === beforeCycle, "17.9 Undo restores pre-cycle spelling");
+
+            assert(canUndoChord() === false, "17.10 Undo stack fully drains back to empty (no leftover history)");
+
+            group("18. Standalone chord:current document (state.js, plan.md §10.7.1)");
+            const prevChordDoc = localStorage.getItem(CHORD_STORAGE_KEY);
+            localStorage.removeItem(CHORD_STORAGE_KEY);
+            assert(isChordDocumentDirty() === false, "18.1 No chord document at all reads as not dirty");
+
+            appState.ui.editingScoreChordId = 'not-a-real-id'; // simulate a live ?sid= tab
+            syncChordToStandaloneDocument();
+            assert(readChordDocument() === null, "18.2 syncChordToStandaloneDocument is a no-op while editing a Score chord");
+            appState.ui.editingScoreChordId = null;
+
+            syncChordToStandaloneDocument();
+            const afterSync = readChordDocument();
+            assert(afterSync && JSON.stringify(afterSync.chord) === JSON.stringify(appState.chords[appState.activeChordIndex]), "18.3 syncChordToStandaloneDocument persists the active chord");
+            assert(isChordDocumentDirty() === true, "18.4 A synced-but-never-imported/exported document reads as dirty");
+
+            // Confirm-before-discard guard (resolved 2026-07-20 in place of a separate "undo the
+            // import" mechanism): a dirty chord:current plus an incoming ?n= permalink should
+            // prompt, and only overwrite the persisted document if the user says yes.
+            const originalConfirm = window.confirm;
+            const originalVoices = JSON.stringify(appState.chords[0].voices);
+            window.confirm = () => false;
+            window.history.replaceState({}, '', window.location.pathname + '?n=C4,E4,G4,C5');
+            loadStateFromURL();
+            assert(JSON.stringify(appState.chords[0].voices) === originalVoices, "18.5 Cancelling the discard-confirm resumes the persisted chord, ignoring the link");
+
+            window.confirm = () => true;
+            loadStateFromURL();
+            assert(JSON.stringify(appState.chords[0].voices) !== originalVoices, "18.6 Confirming the discard loads the link's chord");
+            assert(isChordDocumentDirty() === false, "18.7 Importing a permalink resets the dirty baseline");
+
+            window.confirm = originalConfirm;
+
+            group("19. Fresh-session bootstrap (main.js's init(), plan.md §10.7.9)");
+            // A truly first-ever bare visit -- nothing in chord:current, no ?n=/?sid= -- must not
+            // read as dirty just because the initial analysis pass computes real tuning values.
+            // loadStateFromURL()'s return value is how main.js's init() knows whether that
+            // bootstrap-baseline step is safe to run (only on a genuinely fresh session).
+            localStorage.removeItem(CHORD_STORAGE_KEY);
+            window.history.replaceState({}, '', window.location.pathname);
+            assert(loadStateFromURL() === false, "19.1 A truly fresh bare visit reports 'not resumed'");
+
+            syncChordToStandaloneDocument(); // simulate the initial analysis pass's own autosave
+            assert(isChordDocumentDirty() === true, "19.2 Before establishing a baseline, that autosave reads as dirty");
+            establishFreshChordBaseline();
+            assert(isChordDocumentDirty() === false, "19.3 After establishing the baseline, the same content reads as clean");
+
+            assert(loadStateFromURL() === true, "19.4 A bare visit now resumes the just-established document");
+
+            window.history.replaceState({}, '', window.location.pathname + '?n=D4,F%234,A4,D5');
+            assert(loadStateFromURL() === true, "19.5 A ?n= permalink import always reports 'resumed' (real baseline established)");
+
+            if (prevChordDoc === null) localStorage.removeItem(CHORD_STORAGE_KEY);
+            else localStorage.setItem(CHORD_STORAGE_KEY, prevChordDoc);
 
             window.history.replaceState({}, '', window.location.pathname);
             document.body.removeChild(shareBtn);
