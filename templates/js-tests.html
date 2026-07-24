@@ -28,6 +28,7 @@
         import { readScoreDocument, writeScoreDocument, SCORE_STORAGE_KEY } from '/static/js/score-store.js';
         import { readChordDocument, writeChordDocument, CHORD_STORAGE_KEY } from '/static/js/chord-store.js';
         import { parseChordName, generateVoicings, VOICING_TEMPLATES, VOICE_RANGES } from '/static/js/voicing-generator.js';
+        import { swapVoices, bumpOctave, SWAP_PAIRS } from '/static/js/revoice.js';
 
         const results = document.getElementById('results');
         const summary = document.getElementById('summary');
@@ -524,6 +525,50 @@
                 const semi = getAbsSemitone(v.voices[2]);
                 return semi === 48;
             }), "20.20 Every match from a fixed-voice search actually has that voice at the fixed pitch");
+
+            group("21. Revoice: swap & octave-bump (plan.md §17)");
+            const rvVoices = [
+                { part: 'Bass', step: 'c', acc: 0, oct: 3 },
+                { part: 'Bari', step: 'e', acc: 0, oct: 3 },
+                { part: 'Lead', step: 'g', acc: 0, oct: 3 },
+                { part: 'Tenor', step: 'c', acc: 0, oct: 4 },
+            ];
+            const rvTuning = [0, -13.7, 2.0, 0];
+
+            const swapped = swapVoices(rvVoices, rvTuning, 1, 3);
+            assert(swapped.voices[1].step === 'c' && swapped.voices[1].oct === 4,
+                "21.1 swapVoices moves the other voice's pitch into the first index");
+            assert(swapped.voices[3].step === 'e' && swapped.voices[3].oct === 3,
+                "21.2 swapVoices moves the first voice's pitch into the other index");
+            assert(swapped.voices[1].part === 'Bari' && swapped.voices[3].part === 'Tenor',
+                "21.3 swapVoices keeps each voice's .part tag fixed to its array index");
+            assert(swapped.tuning[1] === 0 && swapped.tuning[3] === -13.7,
+                "21.4 swapVoices exchanges cents along with the pitch, not left behind");
+            assert(swapped.voices[0].step === 'c' && swapped.voices[2].step === 'g',
+                "21.5 swapVoices leaves the untouched voices exactly as they were");
+            assert(rvVoices[1].step === 'e' && rvTuning[1] === -13.7,
+                "21.6 swapVoices doesn't mutate its input arrays");
+
+            const swappedNoTuning = swapVoices(rvVoices, undefined, 0, 2);
+            assert(swappedNoTuning.tuning === undefined,
+                "21.7 swapVoices tolerates a missing tuning array (returns it as-is)");
+
+            const pairKeys = new Set(SWAP_PAIRS.map(p => p.slice().sort().join(',')));
+            assert(SWAP_PAIRS.length === 6 && pairKeys.size === 6,
+                "21.8 SWAP_PAIRS has exactly the 6 distinct two-part combinations");
+            assert(['0,1', '0,2', '0,3', '1,2', '1,3', '2,3'].every(k => pairKeys.has(k)),
+                "21.9 SWAP_PAIRS covers every possible pair of the four parts");
+
+            const bumpedUp = bumpOctave(rvVoices, 0, 1);
+            assert(getAbsSemitone(bumpedUp[0]) === getAbsSemitone(rvVoices[0]) + 12,
+                "21.10 bumpOctave(+1) raises the pitch by exactly one octave");
+            const bumpedDown = bumpOctave(rvVoices, 3, -1);
+            assert(getAbsSemitone(bumpedDown[3]) === getAbsSemitone(rvVoices[3]) - 12,
+                "21.11 bumpOctave(-1) lowers the pitch by exactly one octave");
+            assert(rvVoices[0].oct === 3,
+                "21.12 bumpOctave doesn't mutate its input array");
+            assert(bumpedUp[1].step === 'e' && bumpedUp[2].step === 'g' && bumpedUp[3].step === 'c' && bumpedUp[3].oct === 4,
+                "21.13 bumpOctave leaves every other voice exactly as it was");
 
             window.history.replaceState({}, '', window.location.pathname);
             document.body.removeChild(shareBtn);
