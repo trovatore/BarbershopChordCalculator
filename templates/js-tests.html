@@ -18,15 +18,16 @@
     <div id="summary" class="summary"></div>
 
     <script type="module">
-        import { getAbsSemitone, getVariations } from '/static/js/spelling.js';
+        import { getAbsSemitone, getVariations, ACC_TO_STR } from '/static/js/spelling.js';
         import { renderControls, handleGlobalKey } from '/static/js/ui-controls.js';
         import { getNoteInfo, findPeaks } from '/static/js/audio.js';
-        import { analyzeChord } from '/static/js/theory.js';
+        import { analyzeChord, ROLE_MAP } from '/static/js/theory.js';
         import { appState, syncInputsToState, syncStateToInputs, generatePermalink, loadStateFromURL, isScoreDocumentDirty, isChordDocumentDirty, syncChordToStandaloneDocument, establishFreshChordBaseline, chordDocStore, VOWEL_PRESETS_EAR as VOWEL_PRESETS } from '/static/js/state.js';
         import { triggerMutation, updateNote, manualUpdate, cycleEnharmonic, undoChordEdit, redoChordEdit, canUndoChord, canRedoChord } from '/static/js/main.js';
         import { createDocumentStore } from '/static/js/document-store.js';
         import { readScoreDocument, writeScoreDocument, SCORE_STORAGE_KEY } from '/static/js/score-store.js';
         import { readChordDocument, writeChordDocument, CHORD_STORAGE_KEY } from '/static/js/chord-store.js';
+        import { parseChordName, generateVoicings, VOICING_TEMPLATES, VOICE_RANGES } from '/static/js/voicing-generator.js';
 
         const results = document.getElementById('results');
         const summary = document.getElementById('summary');
@@ -437,6 +438,92 @@
 
             if (prevChordHistory === null) localStorage.removeItem(CHORD_STORAGE_KEY + ':history');
             else localStorage.setItem(CHORD_STORAGE_KEY + ':history', prevChordHistory);
+
+            group("20. Chord-name parsing & voicing generator (plan.md §10.9)");
+            assert(JSON.stringify(parseChordName("C")) === JSON.stringify({ rootStep: 'c', rootAcc: 0, pattern: '0,4,7' }), "20.1 Bare letter parses as major");
+            assert(parseChordName("Cm").pattern === '0,3,7', "20.2 'm' parses as minor");
+            assert(parseChordName("C7").pattern === '0,4,7,10', "20.3 '7' parses as dominant seventh");
+            assert(parseChordName("Cmaj7").pattern === '0,4,7,11', "20.4 'maj7' parses as major seventh");
+            assert(parseChordName("CM7").pattern === '0,4,7,11', "20.5 'M7' (capital) also parses as major seventh");
+            assert(parseChordName("Cm7").pattern === '0,3,7,10', "20.6 'm7' (lowercase) parses as minor seventh, not major");
+            assert(parseChordName("Cdim7").pattern === '0,3,6,9', "20.7 'dim7' parses as diminished seventh");
+            assert(parseChordName("Cm7b5").pattern === '0,3,6,10', "20.8 'm7b5' parses as half-diminished seventh");
+            assert(parseChordName("C+").pattern === '0,4,8', "20.9 '+' parses as augmented");
+            assert(parseChordName("C9").pattern === '0,2,4,10', "20.10 '9' parses as the no-fifth ninth");
+            const bb7 = parseChordName("Bb7");
+            assert(bb7.rootStep === 'b' && bb7.rootAcc === -1 && bb7.pattern === '0,4,7,10', "20.11 Flat root parses correctly");
+            const fsm7 = parseChordName("F#m7");
+            assert(fsm7.rootStep === 'f' && fsm7.rootAcc === 1 && fsm7.pattern === '0,3,7,10', "20.12 Sharp root parses correctly");
+            assert(parseChordName("Cxyz") === null, "20.13 Unrecognized suffix returns null");
+            assert(parseChordName("") === null, "20.14 Empty input returns null");
+
+            // Every template, at every root, actually round-trips through the app's own
+            // analyzeChord() as the quality it claims to be -- the same discipline the Android
+            // quiz app's voicing templates were checked with (computationally, not by eye),
+            // just now as a permanent regression test using the real engine instead of a
+            // one-off script.
+            // Derived from ROLE_MAP itself (not hand-transcribed) so this can't drift out of sync
+            // with what analyzeChord() actually labels each interval -- role names are generic/
+            // interval-based (e.g. an augmented triad's raised 5th comes back as "Minor 6th", the
+            // same enharmonic interval, not a chord-aware "Aug 5th"), which a hand-written table
+            // would be an easy place to get subtly wrong.
+            const ROLE_TO_INTERVAL = Object.fromEntries(Object.entries(ROLE_MAP).map(([interval, role]) => [role, Number(interval)]));
+            let templateRoundTripFailures = [];
+            VOICING_TEMPLATES.forEach(template => {
+                for (let root = 0; root < 12; root++) {
+                    const noteStrs = template.offsets.map(o => {
+                        const semi = 48 + root + o; // 48 = C4, an arbitrary comfortable baseline
+                        const spelled = getVariations(semi, Math.floor(semi / 12), [])[0];
+                        return spelled.step.toUpperCase() + (ACC_TO_STR[spelled.acc] || '') + spelled.oct;
+                    });
+                    const result = analyzeChord(noteStrs, { tuning_style: 'equal' });
+                    const gotPattern = result.notes.length
+                        ? [...new Set(result.notes.map(n => ROLE_TO_INTERVAL[n.role]))].sort((a, b) => a - b).join(',')
+                        : null;
+                    if (gotPattern !== template.pattern) {
+                        templateRoundTripFailures.push(`${template.pattern} "${template.description}" root=${root}: got ${gotPattern}`);
+                    }
+                }
+            });
+            assert(templateRoundTripFailures.length === 0,
+                "20.15 Every voicing template round-trips to its intended quality at every root" +
+                (templateRoundTripFailures.length ? ` (failures: ${templateRoundTripFailures.slice(0, 3).join('; ')})` : ""));
+
+            // Every template's Bass offset is the lowest and Tenor's the highest -- a real
+            // structural invariant (Bari/Lead may cross, a genuine barbershop convention, so
+            // that pair is deliberately NOT checked here).
+            const badOrdering = VOICING_TEMPLATES.filter(t => {
+                const [bass, , , tenor] = t.offsets;
+                return bass !== Math.min(...t.offsets) || tenor !== Math.max(...t.offsets);
+            });
+            assert(badOrdering.length === 0, "20.16 Every template keeps Bass lowest and Tenor highest");
+
+            // Unconstrained beyond quality+root, so this legitimately returns more than one
+            // result per template (every valid octave placement within VOICE_RANGES counts as
+            // its own candidate, by design -- different spacing/register is a real "different
+            // voicing") -- what actually matters is that every result is confined to the
+            // requested quality+root, and all 3 major-triad templates are represented at least
+            // once each.
+            const majorByName = generateVoicings({ pattern: '0,4,7', rootPc: 0 });
+            const majorDescriptions = new Set(majorByName.map(v => v.description));
+            assert(majorByName.every(v => v.pattern === '0,4,7' && v.rootPc === 0),
+                "20.17a generateVoicings never returns a result outside the requested quality+root");
+            assert(majorDescriptions.size === 3, "20.17b All 3 major-triad templates are represented");
+
+            const noMatch = generateVoicings({ pattern: '0,4,7', rootPc: 0, fixed: [{ voice: 0, semi: 999 }] });
+            assert(noMatch.length === 0, "20.18 An impossible fixed constraint returns no candidates");
+
+            // "I know the lead sings C4" (voice index 2, semitone 48) -- every candidate returned
+            // must actually have that exact pitch in that voice, and there should be at least one
+            // real match (root-doubled C major has Lead on the 5th, not C, so this has to come
+            // from some other quality/root/template entirely -- proves the search isn't just
+            // trivially satisfied).
+            const leadC4 = generateVoicings({ fixed: [{ voice: 2, semi: 48 }] });
+            assert(leadC4.length > 0, "20.19 Fixing one voice's pitch finds at least one real match");
+            assert(leadC4.every(v => {
+                const semi = getAbsSemitone(v.voices[2]);
+                return semi === 48;
+            }), "20.20 Every match from a fixed-voice search actually has that voice at the fixed pitch");
 
             window.history.replaceState({}, '', window.location.pathname);
             document.body.removeChild(shareBtn);

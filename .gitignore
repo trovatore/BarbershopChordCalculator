@@ -8,6 +8,9 @@ engine-kt/.kotlin/
 engine-kt/local.properties
 engine-kt/androidApp/build/
 engine-kt/androidApp/.cxx/
+engine-kt/audioEngine/build/
+engine-kt/audioEngine/.cxx/
+engine-kt/quizApp/build/
 
 # engine-cpp (portable DSP library, plan.md §9.9.11) — Bazel's convention symlinks, not real
 # files; MODULE.bazel.lock IS tracked (pins resolved dependency versions).
