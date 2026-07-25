@@ -21,13 +21,13 @@
         import { getAbsSemitone, getVariations, ACC_TO_STR } from '/static/js/spelling.js';
         import { renderControls, handleGlobalKey } from '/static/js/ui-controls.js';
         import { getNoteInfo, findPeaks } from '/static/js/audio.js';
-        import { analyzeChord, ROLE_MAP } from '/static/js/theory.js';
+        import { analyzeChord, ROLE_MAP, CHORD_PATTERNS, getKeyDiatonicPitchClasses, countChromaticPitchClasses } from '/static/js/theory.js';
         import { appState, syncInputsToState, syncStateToInputs, generatePermalink, loadStateFromURL, isScoreDocumentDirty, isChordDocumentDirty, syncChordToStandaloneDocument, establishFreshChordBaseline, chordDocStore, VOWEL_PRESETS_EAR as VOWEL_PRESETS, getNoteString } from '/static/js/state.js';
         import { triggerMutation, updateNote, manualUpdate, cycleEnharmonic, undoChordEdit, redoChordEdit, canUndoChord, canRedoChord } from '/static/js/main.js';
         import { createDocumentStore } from '/static/js/document-store.js';
         import { readScoreDocument, writeScoreDocument, SCORE_STORAGE_KEY } from '/static/js/score-store.js';
         import { readChordDocument, writeChordDocument, CHORD_STORAGE_KEY } from '/static/js/chord-store.js';
-        import { parseChordName, generateVoicings, VOICING_TEMPLATES, VOICE_RANGES } from '/static/js/voicing-generator.js';
+        import { parseChordName, generateVoicings, VOICING_TEMPLATES, VOICE_RANGES, BARBERSHOPPINESS_RANK } from '/static/js/voicing-generator.js';
         import { swapVoices, bumpOctave, SWAP_PAIRS } from '/static/js/revoice.js';
 
         const results = document.getElementById('results');
@@ -503,28 +503,60 @@
             // result per template (every valid octave placement within VOICE_RANGES counts as
             // its own candidate, by design -- different spacing/register is a real "different
             // voicing") -- what actually matters is that every result is confined to the
-            // requested quality+root, and all 3 major-triad templates are represented at least
+            // requested quality+root, and all 4 major-triad templates are represented at least
             // once each.
             const majorByName = generateVoicings({ pattern: '0,4,7', rootPc: 0 });
             const majorDescriptions = new Set(majorByName.map(v => v.description));
             assert(majorByName.every(v => v.pattern === '0,4,7' && v.rootPc === 0),
                 "20.17a generateVoicings never returns a result outside the requested quality+root");
-            assert(majorDescriptions.size === 3, "20.17b All 3 major-triad templates are represented");
+            assert(majorDescriptions.size === 4, "20.17b All 4 major-triad templates are represented");
 
-            const noMatch = generateVoicings({ pattern: '0,4,7', rootPc: 0, fixed: [{ voice: 0, semi: 999 }] });
-            assert(noMatch.length === 0, "20.18 An impossible fixed constraint returns no candidates");
+            // A pitch class outside {0,4,7} (C major's own root/3rd/5th) can never be Bass in a
+            // C major triad, in any octave -- a genuinely impossible constraint now that fixed
+            // matching is by pitch class (below), not a semitone so absurdly high (the old test
+            // used 999) that it just failed to reach *any* octave.
+            const noMatch = generateVoicings({ pattern: '0,4,7', rootPc: 0, fixed: [{ voice: 0, semi: 1 }] });
+            assert(noMatch.length === 0, "20.18 An impossible fixed constraint (pitch class outside the chord) returns no candidates");
 
-            // "I know the lead sings C4" (voice index 2, semitone 48) -- every candidate returned
-            // must actually have that exact pitch in that voice, and there should be at least one
-            // real match (root-doubled C major has Lead on the 5th, not C, so this has to come
-            // from some other quality/root/template entirely -- proves the search isn't just
-            // trivially satisfied).
+            // "I know the lead sings C" (voice index 2) -- matched by pitch class, not exact
+            // octave (changed 2026-07-25, Mike: "I thought we were listing all chords that match
+            // the notes" -- exact-octave matching was silently excluding real quality/root matches
+            // whenever reaching that one exact octave pushed some other voice out of its own
+            // range, see plan.md §22/§24/§25). Every result must have Lead on *some* C, and at
+            // least one of them should land on a different octave than the one that was searched
+            // for, proving this isn't accidentally still exact-matching.
             const leadC4 = generateVoicings({ fixed: [{ voice: 2, semi: 48 }] });
             assert(leadC4.length > 0, "20.19 Fixing one voice's pitch finds at least one real match");
-            assert(leadC4.every(v => {
-                const semi = getAbsSemitone(v.voices[2]);
-                return semi === 48;
-            }), "20.20 Every match from a fixed-voice search actually has that voice at the fixed pitch");
+            assert(leadC4.every(v => getAbsSemitone(v.voices[2]) % 12 === 0),
+                "20.20 Every match from a fixed-voice search has that voice on the fixed pitch class");
+            assert(leadC4.some(v => getAbsSemitone(v.voices[2]) !== 48),
+                "20.20b ...including at least one match in a different octave than what was searched for");
+
+            // Regression for a real bug Mike hit (2026-07-25): before the "2nd inversion, 5th
+            // doubled (Lead on 3rd)" template existed, no triad template ever put Lead on the 3rd
+            // (only root or 5th) -- searching Eb major triads never surfaced a voicing with Lead
+            // on G (its 3rd) at all, regardless of octave.
+            const ebMajorTriads = generateVoicings({ pattern: '0,4,7', rootPc: 3 });
+            const leadOn3rd = ebMajorTriads.filter(v => v.description.includes('Lead on 3rd'));
+            assert(leadOn3rd.length > 0, "20.21 Eb major triad now has a voicing with Lead on the 3rd (G)");
+            const spelledStr = v => v.step.toUpperCase() + (ACC_TO_STR[v.acc] || '') + v.oct;
+            // Mike's own exact target chord: Bb2/Bb3/G4/Eb4, with Lead deliberately an octave
+            // above Tenor for this one score's atypical melody placement (see this template's own
+            // doc comment in voicing-generator.js for why that crossing isn't baked into the
+            // template itself). The generator only ever scales one shape to a single octave, so it
+            // produces this same shape one octave lower on Lead -- Bb2/Bb3/G3/Eb4 -- and getting
+            // to Mike's exact voicing is one Revoice octave-bump on Lead alone away, not a search
+            // constraint (fixing Lead to G4 directly would force every voice up an octave
+            // together, incorrectly pushing Bari out of its own range -- not a real requirement of
+            // the chord itself, just an artifact of the generator's single-shared-octave scaling).
+            const closeMatch = leadOn3rd.find(v => spelledStr(v.voices[0]) === 'Bb2');
+            assert(closeMatch !== undefined, "20.22 Found at the octave matching Mike's Bass/Bari/Tenor exactly");
+            assert(
+                spelledStr(closeMatch.voices[1]) === 'Bb3' &&
+                spelledStr(closeMatch.voices[2]) === 'G3' &&
+                spelledStr(closeMatch.voices[3]) === 'Eb4',
+                `20.23 Bass/Bari/Tenor match Mike's target chord exactly, Lead one octave low (needs a Revoice bump to G4): got ${JSON.stringify(closeMatch.voices)}`
+            );
 
             group("21. Revoice: swap & octave-bump (plan.md §17)");
             const rvVoices = [
@@ -603,6 +635,56 @@
             manualUpdate(1, 'r'); // lowercase
             assert(appState.chords[0].voices[1].rest === true, "22.10 'r' (lowercase) also rests the voice");
             undoChordEdit(); undoChordEdit(); undoChordEdit(); // drain back to a clean baseline
+
+            group("23. Chord-picker ranking: barbershoppiness + in-key, dedup (plan.md §23)");
+            const cMajorDiatonic = getKeyDiatonicPitchClasses(0);
+            assert(JSON.stringify([...cMajorDiatonic].sort((a, b) => a - b)) === JSON.stringify([0, 2, 4, 5, 7, 9, 11]),
+                "23.1 C major (0 fifths) diatonic set is the C major scale");
+            const gMajorDiatonic = getKeyDiatonicPitchClasses(1);
+            assert(JSON.stringify([...gMajorDiatonic].sort((a, b) => a - b)) === JSON.stringify([0, 2, 4, 6, 7, 9, 11]),
+                "23.2 G major (1 sharp) sharpens F (5) to F# (6)");
+            const fMajorDiatonic = getKeyDiatonicPitchClasses(-1);
+            assert(JSON.stringify([...fMajorDiatonic].sort((a, b) => a - b)) === JSON.stringify([0, 2, 4, 5, 7, 9, 10]),
+                "23.3 F major (1 flat) flattens B (11) to Bb (10)");
+
+            assert(countChromaticPitchClasses([0, 4, 7], 0) === 0,
+                "23.4 A C major triad is fully diatonic to C major (0 chromatic notes)");
+            assert(countChromaticPitchClasses([1, 3, 6], 0) === 3,
+                "23.5 Db/Eb/Gb are all chromatic to C major (3 chromatic notes)");
+
+            const rankedPatterns = Object.keys(CHORD_PATTERNS);
+            assert(rankedPatterns.every(p => typeof BARBERSHOPPINESS_RANK[p] === 'number'),
+                "23.6a Every CHORD_PATTERNS quality has a barbershoppiness rank");
+            const rankValues = rankedPatterns.map(p => BARBERSHOPPINESS_RANK[p]);
+            assert(new Set(rankValues).size === rankValues.length,
+                "23.6b No two qualities share the same rank (a well-defined ordering)");
+
+            // Dedup: one result per (template, root), not one per valid octave placement --
+            // unconstrained, a major triad at root 0 has 4 templates, so exactly 4 results now,
+            // not the many-per-template count an unconstrained search used to return.
+            const dedupedMajor = generateVoicings({ pattern: '0,4,7', rootPc: 0 });
+            assert(dedupedMajor.length === 4, `23.7 Dedup leaves exactly one result per template (got ${dedupedMajor.length})`);
+            const dedupedDescriptions = new Set(dedupedMajor.map(v => v.description));
+            assert(dedupedDescriptions.has('Root doubled, close') && dedupedDescriptions.has('Root doubled, ringing (2:3:4:5)'),
+                "23.8 Dedup is scoped per-template -- close and ringing both still appear even though Revoice can reach one from the other");
+
+            // Ranking: unconstrained at root 0, major triad (rank 0) must sort before minor triad
+            // (rank 2) when both are equally in-key.
+            const rankedAtRootC = generateVoicings({ rootPc: 0, keyFifths: 0 });
+            const firstMajorIdx = rankedAtRootC.findIndex(v => v.pattern === '0,4,7');
+            const firstMinorIdx = rankedAtRootC.findIndex(v => v.pattern === '0,3,7');
+            assert(firstMajorIdx >= 0 && firstMinorIdx >= 0 && firstMajorIdx < firstMinorIdx,
+                "23.9 Major triad ranks before minor triad when equally in-key");
+
+            // Blended weighting: in C major, D minor seventh (rank 3, fully diatonic: D/F/A/C)
+            // should outrank Eb dominant seventh (rank 1, but 3 of its 4 notes are chromatic to
+            // C major) -- a rarer-but-in-key chord beating a commoner-but-chromatic one, per
+            // Mike's own "blended score" choice over a simpler quality-first scheme.
+            const blended = generateVoicings({ keyFifths: 0 });
+            const dMinor7Idx = blended.findIndex(v => v.pattern === '0,3,7,10' && v.rootPc === 2);
+            const ebDom7Idx = blended.findIndex(v => v.pattern === '0,4,7,10' && v.rootPc === 3);
+            assert(dMinor7Idx >= 0 && ebDom7Idx >= 0 && dMinor7Idx < ebDom7Idx,
+                "23.10 An in-key D minor seventh outranks a chromatic Eb dominant seventh (blended score)");
 
             window.history.replaceState({}, '', window.location.pathname);
             document.body.removeChild(shareBtn);
