@@ -22,7 +22,7 @@
         import { renderControls, handleGlobalKey } from '/static/js/ui-controls.js';
         import { getNoteInfo, findPeaks } from '/static/js/audio.js';
         import { analyzeChord, ROLE_MAP } from '/static/js/theory.js';
-        import { appState, syncInputsToState, syncStateToInputs, generatePermalink, loadStateFromURL, isScoreDocumentDirty, isChordDocumentDirty, syncChordToStandaloneDocument, establishFreshChordBaseline, chordDocStore, VOWEL_PRESETS_EAR as VOWEL_PRESETS } from '/static/js/state.js';
+        import { appState, syncInputsToState, syncStateToInputs, generatePermalink, loadStateFromURL, isScoreDocumentDirty, isChordDocumentDirty, syncChordToStandaloneDocument, establishFreshChordBaseline, chordDocStore, VOWEL_PRESETS_EAR as VOWEL_PRESETS, getNoteString } from '/static/js/state.js';
         import { triggerMutation, updateNote, manualUpdate, cycleEnharmonic, undoChordEdit, redoChordEdit, canUndoChord, canRedoChord } from '/static/js/main.js';
         import { createDocumentStore } from '/static/js/document-store.js';
         import { readScoreDocument, writeScoreDocument, SCORE_STORAGE_KEY } from '/static/js/score-store.js';
@@ -569,6 +569,40 @@
                 "21.12 bumpOctave doesn't mutate its input array");
             assert(bumpedUp[1].step === 'e' && bumpedUp[2].step === 'g' && bumpedUp[3].step === 'c' && bumpedUp[3].oct === 4,
                 "21.13 bumpOctave leaves every other voice exactly as it was");
+
+            group("22. Rest support (plan.md §19)");
+            assert(getNoteString({ part: 'Bass', step: 'c', acc: 0, oct: 4, rest: false }) === 'c4',
+                "22.1 getNoteString returns a normal note string for a sounding voice");
+            assert(getNoteString({ part: 'Bass', step: 'c', acc: 0, oct: 4, rest: true }) === '',
+                "22.2 getNoteString returns '' for a resting voice, not its placeholder pitch");
+
+            // Bass resting ("" -- filtered by analyzeChord's own regex, same as getNoteString's
+            // output above), Bari/Lead/Tenor forming a real C-major triad. Before the idx-threading
+            // fix, analyzeChord's notes[].part was labeled by the *filtered* array's position, so
+            // this would have mislabeled Bari's entry as "Bass".
+            const restRes = analyzeChord(["", "C4", "E4", "G4"], { tuning_style: "just" });
+            assert(restRes.notes.length === 3, "22.3 A partially-resting chord's analysis only has entries for the sounding voices");
+            assert(restRes.notes.map(n => n.part).join(',') === 'Bari,Lead,Tenor',
+                "22.4 Those entries keep each voice's real part label, not the filtered array's index");
+            assert(restRes.notes.find(n => n.part === 'Bari').note === 'C4' &&
+                   restRes.notes.find(n => n.part === 'Lead').note === 'E4' &&
+                   restRes.notes.find(n => n.part === 'Tenor').note === 'G4',
+                "22.5 Each labeled entry still has its own correct note, not a shifted one");
+
+            // manualUpdate's "R" rest-toggle (main.js) -- same reset/setup pattern group 17 uses.
+            chordDocStore.markImported({}, 'test-reset-2');
+            appState.chords[0].voices[1] = { part: 'Bari', step: 'e', acc: 0, oct: 4, rest: false };
+            manualUpdate(1, 'R');
+            assert(appState.chords[0].voices[1].rest === true, "22.6 Typing 'R' rests the voice");
+            assert(appState.chords[0].voices[1].step === 'e' && appState.chords[0].voices[1].oct === 4,
+                "22.7 Resting keeps the existing pitch as a placeholder, doesn't discard it");
+            manualUpdate(1, 'D4');
+            assert(appState.chords[0].voices[1].rest === false, "22.8 Typing a real note un-rests the voice");
+            assert(appState.chords[0].voices[1].step === 'd' && appState.chords[0].voices[1].oct === 4,
+                "22.9 ...and updates the pitch to what was typed");
+            manualUpdate(1, 'r'); // lowercase
+            assert(appState.chords[0].voices[1].rest === true, "22.10 'r' (lowercase) also rests the voice");
+            undoChordEdit(); undoChordEdit(); undoChordEdit(); // drain back to a clean baseline
 
             window.history.replaceState({}, '', window.location.pathname);
             document.body.removeChild(shareBtn);
