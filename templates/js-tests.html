@@ -21,7 +21,7 @@
         import { getAbsSemitone, getVariations, ACC_TO_STR } from '/static/js/spelling.js';
         import { renderControls, handleGlobalKey } from '/static/js/ui-controls.js';
         import { getNoteInfo, findPeaks } from '/static/js/audio.js';
-        import { analyzeChord, ROLE_MAP, CHORD_PATTERNS, getKeyDiatonicPitchClasses, countChromaticPitchClasses } from '/static/js/theory.js';
+        import { analyzeChord, ROLE_MAP, CHORD_PATTERNS, getKeyDiatonicPitchClasses, countChromaticPitchClasses, keyFifthsAtBeat } from '/static/js/theory.js';
         import { appState, syncInputsToState, syncStateToInputs, generatePermalink, loadStateFromURL, isScoreDocumentDirty, isChordDocumentDirty, syncChordToStandaloneDocument, establishFreshChordBaseline, chordDocStore, VOWEL_PRESETS_EAR as VOWEL_PRESETS, getNoteString } from '/static/js/state.js';
         import { triggerMutation, updateNote, manualUpdate, cycleEnharmonic, undoChordEdit, redoChordEdit, canUndoChord, canRedoChord } from '/static/js/main.js';
         import { createDocumentStore } from '/static/js/document-store.js';
@@ -685,6 +685,15 @@
             const ebDom7Idx = blended.findIndex(v => v.pattern === '0,4,7,10' && v.rootPc === 3);
             assert(dMinor7Idx >= 0 && ebDom7Idx >= 0 && dMinor7Idx < ebDom7Idx,
                 "23.10 An in-key D minor seventh outranks a chromatic Eb dominant seventh (blended score)");
+
+            group("24. Mid-piece key signature changes (plan.md §26)");
+            const twoKeyChanges = [{ atBeat: 0, keyFifths: 0 }, { atBeat: 4, keyFifths: 1 }];
+            assert(keyFifthsAtBeat(twoKeyChanges, 0) === 0, "24.1 Beat 0 resolves to the first key");
+            assert(keyFifthsAtBeat(twoKeyChanges, 2) === 0, "24.2 Between changes resolves to the most recent one");
+            assert(keyFifthsAtBeat(twoKeyChanges, 4) === 1, "24.3 Exactly at a change resolves to the new key");
+            assert(keyFifthsAtBeat(twoKeyChanges, 100) === 1, "24.4 After the last change resolves to the last key");
+            assert(keyFifthsAtBeat([{ atBeat: 0, keyFifths: -2 }], 5) === -2,
+                "24.5 A single-entry list (the common no-mid-piece-change case) always resolves to that one key");
 
             window.history.replaceState({}, '', window.location.pathname);
             document.body.removeChild(shareBtn);
